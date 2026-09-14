@@ -8,6 +8,26 @@ How to use this file
 - Keep newest version at the top.
 
 ==============================================================================
+1.4.2  (2026-09-14)
+==============================================================================
+Changed
+- Standalone AI products (Microsoft Copilot, ChatGPT, Claude, Grok, Ollama,
+  Perplexity) no longer use "Installed, optional AI off".
+- Microsoft Copilot is Installed when the app is present. Policy off is
+  Deactivated. Taskbar button state is Details only, not Status.
+- ChatGPT, Claude, Grok, Ollama, and Perplexity already used Installed /
+  Not Installed only. Unchanged.
+
+==============================================================================
+1.4.1  (2026-09-14)
+==============================================================================
+Changed
+- GPT4All scan no longer walks the model folder looking for an exe.
+- DeepSeek names include V4.1 Flash.
+Added
+- Granite 3 / 4 (IBM) model-file row.
+
+==============================================================================
 1.4.0  (2026-09-03)
 ==============================================================================
 Changed

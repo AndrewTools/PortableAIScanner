@@ -31,9 +31,11 @@
 # 1.3.8 - Green count matches row color; Chrome Gemini Installed only if model exists
 # 1.3.9 - Log FOUND (AI off) when browser AI is present but off
 # 1.4.0 - Tighter M365, Windows on-device AI, local models, Copilot, Comet
+# 1.4.1 - Faster GPT4All scan; DeepSeek V4.1 name match
+# 1.4.2 - Standalone brand Status: no optional-AI-off on Copilot
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.4.0"
+$script:AppVersion = "1.4.2"
 
 # ========== Logging (Log.txt, overwritten at each launch) ==========
 $script:LogDir = $PSScriptRoot
@@ -359,6 +361,7 @@ function Get-HowToDisable {
         "DeepSeek*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove DeepSeek. Or $apps > uninstall the app that downloaded it." }
         "Gemma*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Gemma. Or $apps > uninstall the app that downloaded it." }
         "Phi*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Phi. Or $apps > uninstall the app that downloaded it." }
+        "Granite*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Granite. Or $apps > uninstall the app that downloaded it." }
         "GLM*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove GLM. Or $apps > uninstall the app that downloaded it." }
         "Mistral*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Mistral. Or $apps > uninstall the app that downloaded it." }
         "gpt-oss*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove gpt-oss. Or $apps > uninstall the app that downloaded it." }
@@ -622,6 +625,9 @@ function Test-IsRunning {
         "Kimi*" {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -Patterns @('(?i)kimi', '(?i)moonshot')))
         }
+        "Granite*" {
+            return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -Patterns @('(?i)granite', '(?i)ibm-granite')))
+        }
         "MiniMax*" {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -Patterns @('(?i)minimax')))
         }
@@ -662,13 +668,18 @@ function Scan-Copilot {
             if ($val -and $val.TurnOffWindowsCopilot -eq 1) { $turnedOff = $true }
         }
         $showBtn = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -Name "ShowCopilotButton" -ErrorAction SilentlyContinue
-        $btnExplicitOn = ($null -ne $showBtn -and $showBtn.ShowCopilotButton -eq 1)
-        $btnHidden = ($null -ne $showBtn -and $showBtn.ShowCopilotButton -eq 0)
-
-        if ($turnedOff) { Set-ScanStatus $r "Deactivated" "Disabled by policy" }
-        elseif ($btnExplicitOn) { Set-ScanStatus $r "Activated" "Taskbar button explicitly on" }
-        elseif ($btnHidden) { Set-ScanStatus $r "Installed, optional AI off" "Taskbar button hidden" }
-        else { Set-ScanStatus $r "Installed, optional AI off" "Taskbar setting not set; default is not treated as Activated" }
+        if ($turnedOff) {
+            Set-ScanStatus $r "Deactivated" "Disabled by policy"
+        } else {
+            Set-ScanStatus $r "Installed" "Windows Copilot app present"
+            if ($null -eq $showBtn) {
+                $r.Details += " | Taskbar button setting not set"
+            } elseif ($showBtn.ShowCopilotButton -eq 0) {
+                $r.Details += " | Taskbar button hidden"
+            } elseif ($showBtn.ShowCopilotButton -eq 1) {
+                $r.Details += " | Taskbar button on"
+            }
+        }
     } else {
         Set-ScanStatus $r "Not Installed"
         $r.Details = "No Copilot package, registry class, or ms-copilot protocol found"
@@ -1199,26 +1210,69 @@ function Scan-Jan {
 
 function Scan-GPT4All {
     $r = New-Result "GPT4All"
-    $paths = @(
-        "$env:LOCALAPPDATA\nomic.ai\GPT4All",
-        "$env:APPDATA\nomic.ai",
-        "$env:USERPROFILE\gpt4all"
+    # Do not recurse the models folder (%LOCALAPPDATA%\nomic.ai\GPT4All).
+    # That tree holds large GGUF files and made this scan slow.
+    $exe = Test-PathAny @(
+        "$env:USERPROFILE\gpt4all\bin\chat.exe",
+        "$env:USERPROFILE\gpt4all\chat.exe",
+        "$env:USERPROFILE\gpt4all\gpt4all.exe",
+        "$env:USERPROFILE\gpt4all\bin\gpt4all.exe",
+        "$env:LOCALAPPDATA\Programs\GPT4All\bin\chat.exe",
+        "$env:LOCALAPPDATA\Programs\GPT4All\chat.exe",
+        "${env:ProgramFiles}\GPT4All\bin\chat.exe",
+        "${env:ProgramFiles}\GPT4All\gpt4all.exe"
     )
-    $found = Test-PathAny $paths
-    $exe = Get-ChildItem -Path $paths -Recurse -Filter "chat.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $exe) {
-        $exe = Get-ChildItem -Path $paths -Recurse -Filter "gpt4all*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+        $installRoot = "$env:USERPROFILE\gpt4all"
+        if (Test-Path $installRoot) {
+            $hit = Get-ChildItem -Path $installRoot -Depth 2 -File -Filter "chat.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $hit) {
+                $hit = Get-ChildItem -Path $installRoot -Depth 2 -File -Filter "gpt4all*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+            if ($hit) { $exe = $hit.FullName }
+        }
+    }
+    if (-not $exe) {
+        foreach ($uninst in @(
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )) {
+            try {
+                $hit = Get-ItemProperty $uninst -ErrorAction SilentlyContinue |
+                    Where-Object { $_.DisplayName -like "*GPT4All*" } |
+                    Select-Object -First 1
+                if ($hit) {
+                    if ($hit.DisplayIcon -and (Test-Path $hit.DisplayIcon)) { $exe = $hit.DisplayIcon }
+                    elseif ($hit.InstallLocation) {
+                        $cand = Test-PathAny @(
+                            (Join-Path $hit.InstallLocation "bin\chat.exe"),
+                            (Join-Path $hit.InstallLocation "chat.exe"),
+                            (Join-Path $hit.InstallLocation "gpt4all.exe")
+                        )
+                        if ($cand) { $exe = $cand }
+                    }
+                    if (-not $r.Version -and $hit.DisplayVersion) { $r.Version = [string]$hit.DisplayVersion }
+                    break
+                }
+            } catch {}
+        }
     }
 
-    if ($found -or $exe) {
+    $data = Test-PathAny @(
+        "$env:APPDATA\nomic.ai",
+        "$env:LOCALAPPDATA\nomic.ai\GPT4All"
+    )
+
+    if ($exe) {
         $r.Installed = $true
-        if ($exe) {
-            $r.Details = "Executable: $($exe.FullName)"
-            $r.Version = Get-FileVersionSafe $exe.FullName
-        } else {
-            $r.Details = "Data folder: $found"
-        }
+        $r.Details = "Executable: $exe"
+        if (-not $r.Version) { $r.Version = Get-FileVersionSafe $exe }
         Set-ScanStatus $r "Installed"
+    } elseif ($data) {
+        $r.Installed = $true
+        $r.Details = "Data folder: $data"
+        Set-ScanStatus $r "Installed" "Data present"
     } else {
         Set-ScanStatus $r "Not Installed"
         $r.Details = "No GPT4All folder or executable found"
@@ -1897,7 +1951,11 @@ function Scan-Llama {
 
 function Scan-DeepSeek {
     # Aggressive: broad patterns for R1, V3, V4, coder, distill, MoE variants
-    New-ModelFamilyResult -DisplayName "DeepSeek (R1 / V3.2 / V4 Flash-Pro / Vision)" -ProviderNote "DeepSeek - aggressive match (R2 not released)" -Aggressive -Keywords @(
+    New-ModelFamilyResult -DisplayName "DeepSeek (R1 / V3.2 / V4 / V4.1 Flash-Pro / Vision)" -ProviderNote "DeepSeek - aggressive match (R2 not released)" -Aggressive -Keywords @(
+        '(?i)deepseek-v4\.1-flash',
+        '(?i)deepseek-v4\.1',
+        '(?i)deepseek-v4-1-flash',
+        '(?i)deepseek-v4-1',
         '(?i)deepseek-v4-flash-vision',
         '(?i)deepseek-v4-pro-0813',
         '(?i)deepseek-v4-flash-0731',
@@ -1974,6 +2032,19 @@ function Scan-Phi {
         '(?i)phi3',
         '(?i)phi-mini',
         '(?i)phi-medium'
+    )
+}
+
+function Scan-Granite {
+    New-ModelFamilyResult -DisplayName "Granite 3 / 4 (IBM)" -ProviderNote "IBM Granite open-weight family" -Keywords @(
+        '(?i)ibm-granite',
+        '(?i)granite-?4',
+        '(?i)granite4',
+        '(?i)granite-?3',
+        '(?i)granite3',
+        '(?i)granite-code',
+        '(?i)granite-guardian',
+        '(?i)granite'
     )
 }
 
@@ -2586,6 +2657,7 @@ $btnScan.Add_Click({
             Fns = @(
                 { Scan-DeepSeek },
                 { Scan-Gemma },
+                { Scan-Granite },
                 { Scan-GLM },
                 { Scan-GptOss },
                 { Scan-Kimi },
