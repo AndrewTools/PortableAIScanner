@@ -5,9 +5,9 @@ A portable Windows app that lists AI apps, browser AI features, and
 local models on this PC. It does not install anything.
 
 License: All rights reserved. You may run this app on your own PC.
-You may not modify or republish it. See LICENSE.
+You may not modify or republish it. See LICENSE.txt.
 
-Current version: 1.4.2
+Current version: 1.5.0
 
 Files needed to run
 -------------------
@@ -18,7 +18,7 @@ Keep these in the same folder:
                           this file next to it
   Version.txt             Version history (optional to run)
 
-README.txt and LICENSE are documentation only.
+README.txt and LICENSE.txt are documentation only.
 
 Requirements
 ------------
@@ -31,6 +31,9 @@ How to run
 1. Put PortableAIScanner.exe and AI_Scanner.ps1 in one folder.
 2. Double-click PortableAIScanner.exe.
 3. Click Scan for Installed AI.
+4. Click Detected to hide gray rows.
+5. Click Export list (bottom right) to save the visible rows as a
+   CSV file for Excel or LibreOffice.
 
 Windows may warn that the exe is unsigned. That is SmartScreen.
 You can choose More info, then Run anyway if you trust this copy.
@@ -45,21 +48,26 @@ What you will see
 -----------------
 The window shows the Windows version and the app version.
 
-After a scan:
+After a scan the status line shows Green / Blue / Red counts and
+how many seconds the scan took.
 
   Green  Installed. For a standalone product (Copilot, ChatGPT,
          Claude, Grok, Ollama, Perplexity) this means the app is
-         present. For a browser, this can also mean the browser is
-         installed and its optional AI is off.
-  Blue   Activated (a clear on switch was found)
+         present. For Chrome or Edge this means the on-device model
+         or an explicit AI setting was found.
+  Blue   Activated (on-device model file on disk, or a clear on
+         switch was found)
   Red    An on-device model is loaded in memory
-  Gray   Not installed, or no on-device model found
+  Gray   Not installed, or the browser is present but no on-device
+         model was found (None Found on Disk)
 
 Running = Yes only when a local model is actually in memory.
 A browser being open does not count as running.
 
-How to disable appears only when Installed is Yes. Those steps
-use Settings and the mouse. They do not ask you to edit files.
+How to disable
+--------------
+How to disable appears when Installed is Yes. Those steps use
+Settings and the mouse. They do not ask you to edit files.
 
 Log file
 --------
