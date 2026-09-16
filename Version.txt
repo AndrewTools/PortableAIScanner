@@ -8,6 +8,50 @@ How to use this file
 - Keep newest version at the top.
 
 ==============================================================================
+1.5.2  (2026-09-15)
+==============================================================================
+Added
+- Single-instance check. A second launch asks you to close the open window first.
+- Cancel button. It appears only while a scan is running.
+- Scan button becomes Rescan after the first scan finishes.
+
+Changed
+- Scan button text is Scan.
+- Color legend at the bottom of the window is removed.
+- Export list is at the top and stays hidden until a scan finishes.
+- Detected stays hidden until a scan finishes.
+- PowerShell exits when the window closes so powershell.exe does not stay open.
+- Cancel is also checked during the pre-scan memory and model-index steps.
+- The wrapper holds a mutex and waits until PowerShell exits so a second
+  double-click does not start another copy.
+- Windows 7 legacy window uses Scan / Rescan / Cancel and has no color footer.
+- If you start the script from an already-open command prompt, that prompt
+  stays open. Hide and Exit(0) run only for the exe or a double-click from Explorer.
+- Unknown parent processes keep the prompt (VS Code and other terminals).
+- Wrapper and both scripts use the same mutex name Local\PortableAIScanner.
+- Windows 7 also has Detected and Export list with the same hide rules and CSV.
+- Wrapper no longer redirects PowerShell output. It only waits until the
+  window closes. Rebuild the exe.
+- Detected and Export list button positions are swapped (Detected first).
+- Cancel stays visible after the first scan and is grayed out when no scan is running.
+- Cancel stays visible after the first scan and is grayed out until Rescan.
+- Firefox version is read at scan time. Versions with AI but no Settings AI
+  Controls page (about 130-147) are called out, with sidebar and update steps.
+
+==============================================================================
+1.5.1  (2026-09-15)
+==============================================================================
+Added
+- AI_Scanner_Legacy.ps1 for Windows 7. Local runtimes, model files, process
+  and uninstall-registry checks only.
+- Wrapper and VBS choose the script from the Windows NT version.
+- Unsupported Windows versions show a not-compatible message and do not start
+  either scanner.
+
+Changed
+- App version is 1.5.1. Windows 10/11 still use AI_Scanner.ps1.
+
+==============================================================================
 1.5.0  (2026-09-15)
 ==============================================================================
 Added

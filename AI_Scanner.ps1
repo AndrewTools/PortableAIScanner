@@ -1,4 +1,4 @@
-# Portable AI Scanner - Windows 10/11 App
+﻿# Portable AI Scanner - Windows 10/11 App
 # No installation required. Run with: powershell -ExecutionPolicy Bypass -File AI_Scanner.ps1
 # Or double-click Run_AI_Scanner.bat
 # Changelog: Version.txt (keep in sync with $script:AppVersion)
@@ -36,7 +36,7 @@
 # 1.5.0 - Export list, Detected filter, Notepad settings.dat file-read first
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.5.0"
+$script:AppVersion = "1.5.2"
 
 # ========== Logging (Log.txt, overwritten at each launch) ==========
 $script:LogDir = $PSScriptRoot
@@ -130,6 +130,21 @@ try {
     throw
 }
 
+function Test-ShouldCloseHost {
+    if ($env:PAS_FROM_EXE -eq "1") { return $true }
+    try {
+        $me = Get-WmiObject Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop
+        if (-not $me) { return $false }
+        $par = Get-WmiObject Win32_Process -Filter ("ProcessId=" + $me.ParentProcessId) -ErrorAction Stop
+        $n = ([string]$par.Name).ToLower()
+        if ($n -match "^(explorer\.exe|wscript\.exe|cscript\.exe)$") { return $true }
+    } catch {}
+    return $false
+}
+$script:KeepHostPrompt = -not (Test-ShouldCloseHost)
+if ($script:KeepHostPrompt) { Write-Log "LOAD: launched from a prompt; console will stay open" }
+else { Write-Log "LOAD: launched from exe or Explorer; host console may be hidden" }
+
 # Hide the attached console if present (SW_HIDE = 0, not SW_MINIMIZE = 6)
 try {
     $hideConsoleSrc = @"
@@ -142,6 +157,9 @@ public class NativeConsole {
     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 }
 "@
+    if ($script:KeepHostPrompt) {
+        Write-Log "LOAD: console left visible (started from a prompt)"
+    } else {
     Add-Type -TypeDefinition $hideConsoleSrc -ErrorAction SilentlyContinue
     $con = [NativeConsole]::GetConsoleWindow()
     if ($con -ne [IntPtr]::Zero) {
@@ -150,10 +168,34 @@ public class NativeConsole {
     } else {
         Write-Log "LOAD: no console window attached"
     }
+    }
 } catch {
     Write-Log "LOAD ERROR: hide-console step failed (non-fatal)" -ErrorRecord $_
 }
 Write-Log "LOAD: helpers starting"
+
+$script:InstanceMutex = $null
+try {
+    if ($env:PAS_FROM_EXE -eq "1") {
+        Write-Log "LOAD: exe holds the single-instance lock"
+    } else {
+    $created = $false
+    $script:InstanceMutex = New-Object System.Threading.Mutex($true, "Local\PortableAIScanner", [ref]$created)
+    if (-not $created) {
+        Write-Log "LOAD: another instance is already running"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Portable AI Scanner is already running.`r`nClose the other window before starting a new one.",
+            "Portable AI Scanner",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+        exit
+    }
+    }
+} catch {
+    Write-Log "LOAD: single-instance check failed (non-fatal)"
+}
+
 
 # ========== Helpers ==========
 
@@ -391,7 +433,9 @@ function Get-HowToDisable {
         "Opera*" { return "Open Opera > Settings > Sidebar > turn off Aria / Opera AI." }
         "Brave*" { return "Open Brave > Settings > Leo > turn off Leo AI." }
         "Perplexity Comet*" { return "Open Comet > Settings > turn off AI features. Or $apps > Comet > Uninstall." }
-        "Mozilla Firefox*" { return "Open Firefox > Settings > AI Controls > turn on Block AI enhancements." }
+        "Mozilla Firefox*" {
+            return "If Firefox is 148 or later: Settings > AI Controls > Block AI enhancements. Older Firefox with AI has no that page - update via Help > About Firefox first."
+        }
         "Grok*" { return "$apps > Grok > Uninstall if listed. Otherwise use the website only and sign out." }
         "Windsurf*" { return "$apps > Windsurf > Uninstall." }
         "llama.cpp*" { return "If llama.cpp appears in $apps, click Uninstall. If you only have a program file, delete that app shortcut from Start by right-click > Uninstall when Windows offers it." }
@@ -874,6 +918,16 @@ function Scan-GeminiChrome {
     $r.Installed = $true
     $r.Details = "Chrome: $chromeExe"
     $r.Version = Get-FileVersionSafe $chromeExe
+    $chromeMajor = 0
+    if ($r.Version -match "^(\d+)") { $chromeMajor = [int]$Matches[1] }
+    $chMajor = 0
+    if ($r.Version -match '^(\d+)') { $chMajor = [int]$Matches[1] }
+    if ($chMajor -gt 0 -and $chMajor -lt 126) {
+        $r.Installed = $false
+        $r.DisableHint = ""
+        Set-ScanStatus $r "None Found on Disk" "Chrome $chMajor present; no Gemini Nano on this version"
+        return $r
+    }
 
     $signals = @()
     $weightsPresent = $false
@@ -1122,6 +1176,14 @@ function Scan-EdgeCopilot {
 
     $r.Details = "Edge: $edge"
     $r.Version = Get-FileVersionSafe $edge
+    $edMajor = 0
+    if ($r.Version -match '^(\d+)') { $edMajor = [int]$Matches[1] }
+    if ($edMajor -gt 0 -and $edMajor -lt 112) {
+        $r.Installed = $false
+        $r.DisableHint = ""
+        Set-ScanStatus $r "None Found on Disk" "Edge $edMajor present; no Copilot / on-device AI on this version"
+        return $r
+    }
 
     # Policy / feature registry signals for Edge Copilot / sidebar AI
     $activatedHints = @()
@@ -1596,6 +1658,14 @@ function Scan-OperaAI {
     $r.Installed = $true
     $r.Details = "Executable: $exe"
     $r.Version = Get-FileVersionSafe $exe
+    $opMajor = 0
+    if ($r.Version -match "^(\d+)") { $opMajor = [int]$Matches[1] }
+    if ($opMajor -gt 0 -and $opMajor -lt 100) {
+        $r.Installed = $false
+        $r.DisableHint = ""
+        Set-ScanStatus $r "None Found on Disk" "Opera $opMajor present; no Aria on this version"
+        return $r
+    }
     Set-ScanStatus $r "Installed, optional AI off" "Aria activation not confirmed"
 
     # Opera prefs often under Local AppData Opera Stable
@@ -1635,6 +1705,23 @@ function Scan-BraveLeo {
     $r.Installed = $true
     $r.Details = "Executable: $exe"
     $r.Version = Get-FileVersionSafe $exe
+    $brMajor = 0
+    $brMinor = 0
+    if ($r.Version -match "^(\d+)\.(\d+)") {
+        $brMajor = [int]$Matches[1]
+        $brMinor = [int]$Matches[2]
+    } elseif ($r.Version -match "^(\d+)") {
+        $brMajor = [int]$Matches[1]
+    }
+    $brHasLeo = $false
+    if ($brMajor -eq 1 -and $brMinor -ge 52) { $brHasLeo = $true }
+    elseif ($brMajor -ge 112) { $brHasLeo = $true }
+    if ($brMajor -gt 0 -and -not $brHasLeo) {
+        $r.Installed = $false
+        $r.DisableHint = ""
+        Set-ScanStatus $r "None Found on Disk" "Brave $brMajor present; no Leo AI on this version"
+        return $r
+    }
     Set-ScanStatus $r "Installed, optional AI off" "Leo activation not confirmed"
 
     # Policy can disable Leo
@@ -1718,7 +1805,10 @@ function Scan-Firefox {
     $exe = Test-PathAny @(
         "${env:ProgramFiles}\Mozilla Firefox\firefox.exe",
         "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe",
-        "$env:LOCALAPPDATA\Mozilla Firefox\firefox.exe"
+        "$env:LOCALAPPDATA\Mozilla Firefox\firefox.exe",
+        "${env:ProgramFiles}\Firefox Nightly\firefox.exe",
+        "${env:ProgramFiles}\Firefox Developer Edition\firefox.exe",
+        "$env:LOCALAPPDATA\Firefox Developer Edition\firefox.exe"
     )
     if (-not $exe) {
         Set-ScanStatus $r "Not Installed"
@@ -1730,6 +1820,46 @@ function Scan-Firefox {
     $r.Installed = $true
     $r.Details = "Executable: $exe"
     $r.Version = Get-FileVersionSafe $exe
+
+    try {
+        $ini = Join-Path (Split-Path $exe -Parent) "application.ini"
+        if (Test-Path $ini) {
+            foreach ($line in (Get-Content $ini -ErrorAction SilentlyContinue)) {
+                if ($line -match '^\s*Version\s*=\s*(.+)$') {
+                    $r.Version = $Matches[1].Trim()
+                    break
+                }
+            }
+        }
+    } catch {}
+
+    $ffMajor = 0
+    if ($r.Version -match '^(\d+)') { $ffMajor = [int]$Matches[1] }
+    # 133-147: gen AI ships without Settings > AI Controls
+    # 148+: Settings > AI Controls (Block AI enhancements)
+    $ffHasAiBundle = ($ffMajor -ge 133)
+    $ffHasAiControls = ($ffMajor -ge 148)
+
+    try {
+        $polAi = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\AIControls" -ErrorAction SilentlyContinue
+        $polGen = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\GenerativeAI" -ErrorAction SilentlyContinue
+        if ($polAi -or $polGen) { $r.Details += " | Policy keys present under Mozilla\Firefox" }
+    } catch {}
+    if ($ffMajor -gt 0) {
+        $r.Details += " | Firefox $ffMajor"
+        if (-not $ffHasAiBundle) {
+            $r.Installed = $false
+            $r.DisableHint = ""
+            Set-ScanStatus $r "None Found on Disk" "Firefox $ffMajor present; no bundled generative AI"
+            return $r
+        }
+        if (-not $ffHasAiControls) {
+            $r.Details += " | This version includes AI but has no Settings AI Controls page"
+            $r.DisableHint = "This Firefox version includes AI but has no Settings > AI Controls page. Click the sidebar button and uncheck AI Chatbot. Then Firefox > Help > About Firefox > restart to update. After 148 use Settings > AI Controls > turn on Block AI enhancements."
+        } else {
+            $r.DisableHint = "Firefox Settings > AI Controls > turn on Block AI enhancements."
+        }
+    }
 
     $enabledFlags = @()
     $disabledFlags = @()
@@ -1820,12 +1950,24 @@ function Scan-Firefox {
         Set-ScanStatus $r "Deactivated" "AI prefs set off/blocked"
         $r.Details += " | disabled=$($disabledFlags.Count); blocked=$($blockedControls.Count)"
     } elseif ($profileChecked) {
-        # No AI prefs written = Firefox default: AI available but not forced on
-        Set-ScanStatus $r "Installed, optional AI off" "AI optional; not enabled in prefs"
-        $r.Details += " | No browser.ml or AI Controls overrides found. Defaults apply"
+        if ($ffHasAiBundle -and -not $ffHasAiControls) {
+            Set-ScanStatus $r "Installed" "AI included; no Settings disable page (Firefox $ffMajor)"
+            $r.Details += " | No AI Controls page on this version. Prefs have no ml overrides"
+        } elseif ($ffHasAiControls) {
+            Set-ScanStatus $r "Installed, optional AI off" "AI optional; not enabled in prefs"
+            $r.Details += " | No browser.ml or AI Controls overrides found. Defaults apply"
+        } else {
+            Set-ScanStatus $r "Installed" "No bundled generative AI Controls on this version"
+            $r.Details += " | No browser.ml or AI Controls overrides found"
+        }
     } else {
-        Set-ScanStatus $r "Installed, optional AI off" "Could not read Firefox profile prefs"
-        $r.Details += " | Profiles folder missing or empty"
+        if ($ffHasAiBundle -and -not $ffHasAiControls) {
+            Set-ScanStatus $r "Installed" "AI included; no Settings disable page (Firefox $ffMajor)"
+            $r.Details += " | Could not read profile prefs"
+        } else {
+            Set-ScanStatus $r "Installed, optional AI off" "Could not read Firefox profile prefs"
+            $r.Details += " | Profiles folder missing or empty"
+        }
     }
     return $r
 }
@@ -2768,7 +2910,8 @@ function Add-ResultToListView {
     $item.SubItems.Add( $r.Details ) | Out-Null
     $disableText = ""
     if ($r.Installed -or $r.Name -like "Microsoft Edge*") {
-        $disableText = Get-HowToDisable -Name $r.Name
+        if ($r.DisableHint) { $disableText = [string]$r.DisableHint }
+        else { $disableText = Get-HowToDisable -Name $r.Name }
     }
     $item.SubItems.Add( $disableText ) | Out-Null
 
@@ -2835,9 +2978,6 @@ function Show-ScanRows {
 # ========== GUI ==========
 Write-Log "LOAD: building window"
 
-# ========== GUI ==========
-Write-Log "LOAD: building window"
-
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "$script:AppName v$script:AppVersion"
 $form.Size = New-Object System.Drawing.Size(900, 640)
@@ -2868,33 +3008,53 @@ $script:ScanRows = @()
 $script:HasScanResults = $false
 
 $btnScan = New-Object System.Windows.Forms.Button
-$btnScan.Text = "Scan for Installed AI"
+$btnScan.Text = "Scan"
 $btnScan.Location = New-Object System.Drawing.Point(20, 78)
-$btnScan.Size = New-Object System.Drawing.Size(150, 34)
+$btnScan.Size = New-Object System.Drawing.Size(90, 34)
 $btnScan.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
 $btnScan.ForeColor = [System.Drawing.Color]::White
 $btnScan.FlatStyle = "Flat"
 $btnScan.Anchor = "Top, Left"
 $form.Controls.Add($btnScan)
 
+$btnCancel = New-Object System.Windows.Forms.Button
+$btnCancel.Text = "Cancel"
+$btnCancel.Location = New-Object System.Drawing.Point(116, 78)
+$btnCancel.Size = New-Object System.Drawing.Size(80, 34)
+$btnCancel.FlatStyle = "Flat"
+$btnCancel.Anchor = "Top, Left"
+$btnCancel.Visible = $false
+$btnCancel.Enabled = $false
+$form.Controls.Add($btnCancel)
+
+$btnExport = New-Object System.Windows.Forms.Button
+$btnExport.Text = "Export list"
+$btnExport.Location = New-Object System.Drawing.Point(296, 78)
+$btnExport.Size = New-Object System.Drawing.Size(100, 34)
+$btnExport.FlatStyle = "Flat"
+$btnExport.Anchor = "Top, Left"
+$btnExport.Visible = $false
+$form.Controls.Add($btnExport)
+
 $btnDetected = New-Object System.Windows.Forms.Button
 $btnDetected.Text = "Detected"
-$btnDetected.Location = New-Object System.Drawing.Point(176, 78)
+$btnDetected.Location = New-Object System.Drawing.Point(202, 78)
 $btnDetected.Size = New-Object System.Drawing.Size(88, 34)
 $btnDetected.FlatStyle = "Flat"
 $btnDetected.Anchor = "Top, Left"
+$btnDetected.Visible = $false
 $form.Controls.Add($btnDetected)
 
 $lblStatus = New-Object System.Windows.Forms.Label
 $lblStatus.Text = ""
-$lblStatus.Location = New-Object System.Drawing.Point(272, 78)
-$lblStatus.Size = New-Object System.Drawing.Size(588, 18)
+$lblStatus.Location = New-Object System.Drawing.Point(408, 78)
+$lblStatus.Size = New-Object System.Drawing.Size(452, 18)
 $lblStatus.Anchor = "Top, Left, Right"
 $form.Controls.Add($lblStatus)
 
 $progress = New-Object System.Windows.Forms.ProgressBar
-$progress.Location = New-Object System.Drawing.Point(272, 98)
-$progress.Size = New-Object System.Drawing.Size(588, 16)
+$progress.Location = New-Object System.Drawing.Point(408, 98)
+$progress.Size = New-Object System.Drawing.Size(452, 16)
 $progress.Minimum = 0
 $progress.Maximum = 100
 $progress.Value = 0
@@ -2904,7 +3064,7 @@ $form.Controls.Add($progress)
 
 $lv = New-Object System.Windows.Forms.ListView
 $lv.Location = New-Object System.Drawing.Point(20, 125)
-$lv.Size = New-Object System.Drawing.Size(840, 420)
+$lv.Size = New-Object System.Drawing.Size(840, 450)
 $lv.View = "Details"
 $lv.FullRowSelect = $true
 $lv.GridLines = $true
@@ -2920,22 +3080,6 @@ $form.Controls.Add($lv)
 
 $form.Add_Shown({ Resize-NameAndDisableColumns -ListView $lv })
 
-$lblFooter = New-Object System.Windows.Forms.Label
-$lblFooter.Text = "v$script:AppVersion | Colors: Green = Installed | Blue = Activated | Red = Running in memory | Gray = Not installed"
-$lblFooter.Location = New-Object System.Drawing.Point(20, 558)
-$lblFooter.Size = New-Object System.Drawing.Size(620, 20)
-$lblFooter.ForeColor = [System.Drawing.Color]::Gray
-$lblFooter.Anchor = "Bottom, Left, Right"
-$form.Controls.Add($lblFooter)
-
-$btnExport = New-Object System.Windows.Forms.Button
-$btnExport.Text = "Export list"
-$btnExport.Size = New-Object System.Drawing.Size(110, 28)
-$btnExport.Location = New-Object System.Drawing.Point(750, 552)
-$btnExport.FlatStyle = "Flat"
-$btnExport.Anchor = "Bottom, Right"
-$btnExport.Enabled = $false
-$form.Controls.Add($btnExport)
 
 $lv.Add_SelectedIndexChanged({
     if ($lv.SelectedItems.Count -gt 0 -and $lv.SelectedItems[0].Tag -eq "section") {
@@ -2943,10 +3087,20 @@ $lv.Add_SelectedIndexChanged({
     }
 })
 
+$script:CancelScan = $false
+$btnCancel.Add_Click({
+    $script:CancelScan = $true
+    $lblStatus.Text = "Canceling scan..."
+    Write-Log "SCAN: cancel requested"
+})
+
 $btnScan.Add_Click({
+    $script:CancelScan = $false
     $btnScan.Enabled = $false
-    $btnExport.Enabled = $false
-    $btnDetected.Enabled = $false
+    $btnCancel.Visible = $true
+    $btnCancel.Enabled = $true
+    $btnExport.Visible = $false
+    $btnDetected.Visible = $false
     $lblStatus.Text = "Starting scan..."
     $scanWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $progress.Value = 0
@@ -2967,19 +3121,32 @@ $btnScan.Add_Click({
     $form.Refresh()
     [System.Windows.Forms.Application]::DoEvents()
 
-    $ollamaLoaded = @(Get-OllamaLoadedModels)
-    Write-ErrorLog "Ollama loaded models: $(if ($ollamaLoaded.Count -gt 0) { $ollamaLoaded -join ', ' } else { '(none)' })"
+    $ollamaLoaded = @()
+    $lmStudioLoaded = @()
+    $compatLoaded = @()
+    if (-not $script:CancelScan) {
+        $ollamaLoaded = @(Get-OllamaLoadedModels)
+        Write-ErrorLog "Ollama loaded models: $(if ($ollamaLoaded.Count -gt 0) { $ollamaLoaded -join ', ' } else { '(none)' })"
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    if (-not $script:CancelScan) {
+        $lmStudioLoaded = @(Get-LmStudioLoadedModels)
+        Write-ErrorLog "LM Studio loaded models: $(if ($lmStudioLoaded.Count -gt 0) { $lmStudioLoaded -join ', ' } else { '(none)' })"
+        [System.Windows.Forms.Application]::DoEvents()
+    }
+    if (-not $script:CancelScan) {
+        $compatLoaded = @(Get-OpenAiCompatLoadedModels)
+        Write-ErrorLog "OpenAI-compat (llama.cpp/etc) models: $(if ($compatLoaded.Count -gt 0) { $compatLoaded -join ', ' } else { '(none)' })"
+        [System.Windows.Forms.Application]::DoEvents()
+    }
 
-    $lmStudioLoaded = @(Get-LmStudioLoadedModels)
-    Write-ErrorLog "LM Studio loaded models: $(if ($lmStudioLoaded.Count -gt 0) { $lmStudioLoaded -join ', ' } else { '(none)' })"
-
-    $compatLoaded = @(Get-OpenAiCompatLoadedModels)
-    Write-ErrorLog "OpenAI-compat (llama.cpp/etc) models: $(if ($compatLoaded.Count -gt 0) { $compatLoaded -join ', ' } else { '(none)' })"
-
-    $lblStatus.Text = "Indexing local model files and tags..."
-    $form.Refresh()
-    [System.Windows.Forms.Application]::DoEvents()
-    Initialize-ModelNameIndex
+    if (-not $script:CancelScan) {
+        $lblStatus.Text = "Indexing local model files and tags..."
+        $form.Refresh()
+        [System.Windows.Forms.Application]::DoEvents()
+        Initialize-ModelNameIndex
+        [System.Windows.Forms.Application]::DoEvents()
+    }
 
     $results = @()
     $scanGroups = @(
@@ -3059,6 +3226,8 @@ $btnScan.Add_Click({
         }
     )
 
+    if ($script:CancelScan) { $scanGroups = @() }
+
     $totalSteps = 0
     foreach ($g in $scanGroups) { $totalSteps += @($g.Fns).Count }
     $step = 0
@@ -3067,6 +3236,7 @@ $btnScan.Add_Click({
     [System.Windows.Forms.Application]::DoEvents()
 
     foreach ($group in $scanGroups) {
+        if ($script:CancelScan) { break }
         if ($group.Header) {
             $script:ScanRows += @{ Kind = "section"; Title = $group.Header }
             if (-not $script:FilterDetected) {
@@ -3075,6 +3245,7 @@ $btnScan.Add_Click({
             }
         }
         foreach ($fn in @($group.Fns)) {
+        if ($script:CancelScan) { break }
         $step++
         $hint = (($fn.ToString() -replace '(?s).*Scan-', 'Scan-') -replace '\s.*', '')
         $pct = [int][Math]::Min(99, [Math]::Round((($step - 1) / [Math]::Max(1, $totalSteps)) * 100))
@@ -3082,6 +3253,7 @@ $btnScan.Add_Click({
         $lblStatus.Text = "Scanning $step of $totalSteps : $hint"
         $form.Refresh()
         [System.Windows.Forms.Application]::DoEvents()
+        if ($script:CancelScan) { break }
         try {
             $r = & $fn
             if ($r) {
@@ -3152,9 +3324,16 @@ $btnScan.Add_Click({
         $script:HasScanResults = $true
     }
 
+    $btnCancel.Visible = $true
+    $btnCancel.Enabled = $false
     $btnScan.Enabled = $true
-    $btnExport.Enabled = $script:HasScanResults
-    $btnDetected.Enabled = $true
+    $btnScan.Text = "Rescan"
+    $btnExport.Visible = $script:HasScanResults
+    $btnDetected.Visible = $script:HasScanResults
+    if ($script:CancelScan) {
+        $lblStatus.Text = "Scan canceled. " + $lblStatus.Text
+        Write-Log "SCAN: canceled"
+    }
 })
 
 $btnDetected.Add_Click({
@@ -3212,4 +3391,11 @@ try {
 } catch {
     Write-Log "LOAD ERROR: window failed to open" -ErrorRecord $_
     [System.Windows.Forms.MessageBox]::Show("A critical error occurred. Details were written to Log.txt", "$script:AppName v$script:AppVersion Error", "OK", "Error")
+} finally {
+    try { if ($form) { $form.Dispose() } } catch {}
+    try { if ($script:InstanceMutex) { $script:InstanceMutex.ReleaseMutex(); $script:InstanceMutex.Dispose() } } catch {}
+    Write-Log "LOAD: process exiting"
+    if (-not $script:KeepHostPrompt) {
+        try { [Environment]::Exit(0) } catch { exit 0 }
+    }
 }
