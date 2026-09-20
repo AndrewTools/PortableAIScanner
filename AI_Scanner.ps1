@@ -1,6 +1,6 @@
 ﻿# Portable AI Scanner - Windows 10/11 App
 # No installation required. Run with: powershell -ExecutionPolicy Bypass -File AI_Scanner.ps1
-# Or double-click Run_AI_Scanner.bat
+# Or rebuild PortableAIScanner.exe with Build_Wrapper.bat
 # Changelog: Version.txt (keep in sync with $script:AppVersion)
 #
 # Version history (semantic: MAJOR.MINOR.PATCH)
@@ -36,7 +36,7 @@
 # 1.5.0 - Export list, Detected filter, Notepad settings.dat file-read first
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.5.2"
+$script:AppVersion = "1.5.8"
 
 # ========== Logging (Log.txt, overwritten at each launch) ==========
 $script:LogDir = $PSScriptRoot
@@ -135,12 +135,15 @@ function Test-ShouldCloseHost {
     try {
         $me = Get-WmiObject Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop
         if (-not $me) { return $false }
+        $cmd = [string]$me.CommandLine
+        if ($cmd -match '(?i)-File\s+.*AI_Scanner') { return $true }
         $par = Get-WmiObject Win32_Process -Filter ("ProcessId=" + $me.ParentProcessId) -ErrorAction Stop
         $n = ([string]$par.Name).ToLower()
-        if ($n -match "^(explorer\.exe|wscript\.exe|cscript\.exe)$") { return $true }
+        if ($n -match "^(wscript\.exe|cscript\.exe)$") { return $true }
     } catch {}
     return $false
 }
+
 $script:KeepHostPrompt = -not (Test-ShouldCloseHost)
 if ($script:KeepHostPrompt) { Write-Log "LOAD: launched from a prompt; console will stay open" }
 else { Write-Log "LOAD: launched from exe or Explorer; host console may be hidden" }
@@ -419,7 +422,11 @@ function Get-HowToDisable {
         "Paint*" { return "Windows Settings > Privacy & security > Text and image generation > turn off Paint if listed. Paint itself has no simple off switch for every AI tool." }
         "Google Gemini (in Chrome)" { return "Open Chrome > three-dot menu > Settings > System > turn off On-device AI." }
         "ChatGPT*" { return "$apps > ChatGPT > Uninstall." }
+        "Google Gemini (Desktop)*" { return "$apps > Gemini > Uninstall." }
+        "Claude Code*" { return "$apps > Claude Code if listed > Uninstall. Or delete claude.exe under your user .local\bin folder." }
         "Claude*" { return "$apps > Claude > Uninstall." }
+        "Cherry Studio*" { return "$apps > Cherry Studio > Uninstall." }
+        "LibreChat*" { return "If LibreChat appears in $apps, click Uninstall. If you use Docker Desktop, open Docker Desktop and stop or delete the LibreChat container." }
         "Perplexity" { return "$apps > Perplexity > Uninstall." }
         "Microsoft Edge*" { return "Open Edge > three-dot menu > Settings > Sidebar > turn off Copilot. Then Settings > System > turn off On-device AI if it is listed. Close Edge fully." }
         "Ollama*" { return "$apps > Ollama > Uninstall. That also removes its downloaded models." }
@@ -434,7 +441,7 @@ function Get-HowToDisable {
         "Brave*" { return "Open Brave > Settings > Leo > turn off Leo AI." }
         "Perplexity Comet*" { return "Open Comet > Settings > turn off AI features. Or $apps > Comet > Uninstall." }
         "Mozilla Firefox*" {
-            return "If Firefox is 148 or later: Settings > AI Controls > Block AI enhancements. Older Firefox with AI has no that page - update via Help > About Firefox first."
+            return "Firefox 148+: Settings > AI Controls > turn on Block AI enhancements. Firefox 147: Settings > General > Browsing > turn off Enable link previews. Firefox 136-146: Settings > General > Browsing and Settings > General > Browser Layout > uncheck AI chatbot if listed. Firefox 130-135: Settings > Firefox Labs > turn off AI chatbot (or Settings > General > Tabs)."
         }
         "Grok*" { return "$apps > Grok > Uninstall if listed. Otherwise use the website only and sign out." }
         "Windsurf*" { return "$apps > Windsurf > Uninstall." }
@@ -636,6 +643,178 @@ function Get-LoadedModelsMatching {
     return $matched
 }
 
+
+function Get-CachedProcesses {
+    if ($null -eq $script:ProcSnap) {
+        try { $script:ProcSnap = @(Get-Process -ErrorAction SilentlyContinue) } catch { $script:ProcSnap = @() }
+    }
+    return @($script:ProcSnap)
+}
+
+function Test-CachedProcessName {
+    param([string]$Name)
+    if (-not $Name) { return $false }
+    foreach ($p in @(Get-CachedProcesses)) {
+        try {
+            if ($p.ProcessName -like $Name) { return $true }
+        } catch {}
+    }
+    return $false
+}
+
+function Test-ProductProcessOpen {
+    param([string]$Name)
+    if (-not $Name) { return $false }
+    # Browsers: do not treat the host browser exe as this AI row running
+    if ($Name -like "Google Gemini (in Chrome)*") { return $false }
+    if ($Name -like "Microsoft Edge*") { return $false }
+    if ($Name -like "Mozilla Firefox*") { return $false }
+    if ($Name -like "Opera*") { return $false }
+    if ($Name -like "Brave*") { return $false }
+    if ($Name -like "Perplexity Comet*") { return $false }
+    if ($Name -like "Google Gemini (Desktop)*") {
+        return (Test-OfficialGeminiProcessOpen)
+    }
+
+    $patterns = @()
+    switch -Wildcard ($Name) {
+        "ChatGPT*" { $patterns = @("ChatGPT") }
+        "Claude Code*" { $patterns = @("claude") }
+        "Claude*" { $patterns = @("Claude") }
+        "Google Gemini (Desktop)*" { $patterns = @() }
+        "Microsoft Copilot" { $patterns = @("Copilot") }
+        "Microsoft 365 Copilot*" { $patterns = @("Microsoft365Copilot") }
+        "Ollama*" { $patterns = @("ollama") }
+        "Perplexity" { $patterns = @("Perplexity") }
+        "LM Studio*" { $patterns = @("LM Studio") }
+        "GPT4All*" { $patterns = @("gpt4all","GPT4All") }
+        "Jan*" { $patterns = @("Jan") }
+        "Cherry Studio*" { $patterns = @("Cherry Studio") }
+        "LibreChat*" { $patterns = @() }
+        "Cursor*" { $patterns = @("Cursor") }
+        "Windsurf*" { $patterns = @("Windsurf") }
+        "Msty*" { $patterns = @("Msty") }
+        "ComfyUI*" { $patterns = @() }
+        "Foundry Local*" { $patterns = @("foundry") }
+        "GitHub Copilot*" { $patterns = @() }
+        "llama.cpp*" { $patterns = @("llama-server","llama-cli") }
+        "KoboldCPP*" { $patterns = @("koboldcpp") }
+        "AnythingLLM*" { $patterns = @("AnythingLLM") }
+        "Open WebUI*" { $patterns = @() }
+        default { $patterns = @() }
+    }
+    foreach ($pat in $patterns) {
+        if (-not $pat) { continue }
+        try {
+            $proc = @(Get-CachedProcesses) | Where-Object { $_.ProcessName -like $pat }
+            if ($proc) {
+                if ($Name -like "Google Gemini (Desktop)*") {
+                    $ok = $false
+                    foreach ($pr in @($proc)) {
+                        $pp = ""
+                        try { $pp = [string]$pr.Path } catch {}
+                        if ($pp -match '(?i)\Google\Gemini\') { $ok = $true }
+                    }
+                    if ($ok) { return $true }
+                } else {
+                    return $true
+                }
+            }
+        } catch {}
+        try {
+            $proc = @(Get-CachedProcesses) | Where-Object { $_.ProcessName -like $pat -or $_.ProcessName -like ($pat + "*") }
+            if ($proc) { return $true }
+        } catch {}
+    }
+    return $false
+}
+
+function Test-BrowserProcessOpen {
+    param([string]$Name)
+    $procName = $null
+    switch -Wildcard ($Name) {
+        "Google Gemini (in Chrome)*" { $procName = "chrome" }
+        "Microsoft Edge*" { $procName = "msedge" }
+        "Mozilla Firefox*" { $procName = "firefox" }
+        "Brave*" { $procName = "brave" }
+        "Opera*" { $procName = "opera" }
+        "Perplexity Comet*" { $procName = "comet" }
+        default { return $false }
+    }
+    try {
+        if (Test-CachedProcessName $procName) { return $true }
+    } catch {}
+    return $false
+}
+
+function Set-RunningAndStatus {
+    param($Result, [string]$ModelRunning)
+    if (-not $Result) { return $Result }
+    $st = [string]$Result.Activated
+    $keepOff = @("Deactivated", "Unknown", "Not Installed", "None Found on Disk", "Not Detected", "None Detected")
+
+    if (Test-IsBrowserAiRow $Result.Name) {
+        $aiOn = ($st -eq "Activated" -or $st -eq "Model loaded" -or $st -eq "App running")
+        $browserOpen = $false
+        if ($Result.Installed) { $browserOpen = Test-BrowserProcessOpen $Result.Name }
+        if ($aiOn -and $browserOpen) {
+            $Result.Running = "Yes"
+            $Result.Activated = "App running"
+        } elseif ($aiOn) {
+            $Result.Running = "No"
+            $Result.Activated = "Activated"
+        } else {
+            $Result.Running = "No"
+        }
+        return $Result
+    }
+
+    $modelYes = ($ModelRunning -like "Yes*")
+    $procYes = $false
+    if ($Result.Installed) {
+        $procYes = Test-ProductProcessOpen -Name $Result.Name
+    }
+    if ($modelYes) {
+        $Result.Running = $ModelRunning
+        if ($keepOff -notcontains $st) { $Result.Activated = "Model loaded" }
+    } elseif ($procYes) {
+        $Result.Running = "Yes"
+        if ($keepOff -notcontains $st) { $Result.Activated = "App running" }
+    } else {
+        $Result.Running = "No"
+        if ($Result.Installed -and ($st -eq "App running" -or $st -eq "Model loaded")) {
+            $Result.Activated = "Installed"
+        }
+    }
+    return $Result
+}
+
+
+function Test-BrowserHostOpen {
+    param([string]$Name)
+    $names = @()
+    switch -Wildcard ($Name) {
+        "Google Gemini (in Chrome)*" { $names = @("chrome") }
+        "Microsoft Edge*" { $names = @("msedge") }
+        "Mozilla Firefox*" { $names = @("firefox") }
+        "Brave Browser*" { $names = @("brave") }
+        "Opera Browser*" { $names = @("opera") }
+        "Perplexity Comet*" { $names = @("comet") }
+        default { return $false }
+    }
+    foreach ($n in $names) {
+        try {
+            if (Test-CachedProcessName $n) { return $true }
+        } catch {}
+    }
+    return $false
+}
+
+function Test-IsBrowserAiRow {
+    param([string]$Name)
+    return ($Name -like "Google Gemini (in Chrome)*" -or $Name -like "Microsoft Edge*" -or $Name -like "Mozilla Firefox*" -or $Name -like "Brave Browser*" -or $Name -like "Opera Browser*" -or $Name -like "Perplexity Comet*")
+}
+
 function Test-IsRunning {
     param(
         [string]$AiName,
@@ -742,6 +921,7 @@ function Test-IsRunning {
         }
     }
 }
+
 
 # ========== Scanners ==========
 
@@ -889,7 +1069,7 @@ function Scan-PaintAI {
         Set-ScanStatus $r "Deactivated" "Paint AI policies all set to disable"
         $hints += "Disabled: $($disabled -join ', ')"
     } elseif ($disabled.Count -gt 0) {
-        Set-ScanStatus $r "Installed, optional AI off" "Some Paint AI policies on"
+        Set-ScanStatus $r "Deactivated" "Some Paint AI policies on"
         $hints += "Disabled: $($disabled -join ', ')"
         $hints += "Not disabled: $($enabledMissing -join ', ')"
     } else {
@@ -900,7 +1080,17 @@ function Scan-PaintAI {
     return $r
 }
 
+# Browser AI checklist - update when a new stable version ships
+# For each browser below, confirm:
+#   1. First version that includes the AI feature (gray if older)
+#   2. Settings path to turn it off (mouse only; no about:config)
+#   3. Pref / policy / Local State key names if they were renamed
+#   4. Default on vs off (absent pref is not always off)
+# Current cutoffs: Chrome 126, Edge 112, Opera 100, Brave 1.52 / Chromium 112,
+# Firefox 130 (Labs), Firefox 148 (AI Controls).
+
 function Scan-GeminiChrome {
+    # Chrome: Gemini Nano cutoff 126. Settings > System > On-device AI.
     $r = New-Result "Google Gemini (in Chrome)"
     $r.DisableHint = "Chrome Settings > System > turn off On-device AI."
 
@@ -1034,7 +1224,7 @@ function Scan-GeminiChrome {
     } elseif ($settingsEnabled -eq $true -and -not $weightsPresent) {
         Set-ScanStatus $r "Activated" "Enabled in Settings; model not downloaded yet"
     } elseif ($folderPresent) {
-        Set-ScanStatus $r "Installed, optional AI off" "Model folder only; not treated as active"
+        Set-ScanStatus $r "Deactivated" "Model folder only; not treated as active"
     } else {
         $r.Installed = $false
         Set-ScanStatus $r "None Found on Disk" "Chrome present; no on-device Gemini model"
@@ -1137,6 +1327,236 @@ function Scan-Claude {
     return $r
 }
 
+
+function Test-OfficialGeminiProcessOpen {
+    try {
+        $procs = @(Get-CachedProcesses) | Where-Object {
+            $_.ProcessName -match '(?i)^gemini'
+        }
+        foreach ($p in @($procs)) {
+            $path = $null
+            try { $path = [string]$p.Path } catch {}
+            if ($path -and $path -like "*\Google\Gemini\*") { return $true }
+        }
+    } catch {}
+    return $false
+}
+
+function Scan-GeminiDesktop {
+    # Maintainer check (does not run). Official GeminiSetup.exe is Google Updater
+    # only. Confirmed from that file: appguid {533DD80C-942A-4464-B6A9-2E59428D784E},
+    # appname=Gemini, needsadmin=false (per-user).
+    # Still needed for 100% confirmation on a live install:
+    #   exact Gemini.exe path under %LOCALAPPDATA%\Google\Gemini
+    #   process name and FileDescription
+    #   uninstall DisplayIcon / InstallLocation
+    #   whether Store/Appx Google.Gemini* is ever used
+    #   ClientState value names (pv, name, UninstallCmdLine)
+    # Do not treat Programs\Gemini Desktop wrappers as official.
+    # Re-read this when a new GeminiSetup.exe ships.
+
+    $r = New-Result "Google Gemini (Desktop)"
+    $r.DisableHint = "Windows Settings > Apps > Installed apps > Gemini > Uninstall."
+    $guid = "{533DD80C-942A-4464-B6A9-2E59428D784E}"
+    $bits = @()
+
+    foreach ($rk in @(
+        "HKCU:\SOFTWARE\Google\Update\Clients\$guid",
+        "HKCU:\SOFTWARE\Google\Update\ClientState\$guid",
+        "HKLM:\SOFTWARE\Google\Update\Clients\$guid",
+        "HKLM:\SOFTWARE\WOW6432Node\Google\Update\Clients\$guid"
+    )) {
+        try {
+            if (Test-Path $rk) {
+                $item = Get-ItemProperty $rk -ErrorAction SilentlyContinue
+                $r.Installed = $true
+                $nm = [string]$item.name
+                if (-not $nm) { $nm = [string]$item.Name }
+                $pv = [string]$item.pv
+                if ($pv) { $r.Version = $pv }
+                $bits += "Omaha $guid"
+                if ($nm) { $bits += $nm }
+                break
+            }
+        } catch {}
+    }
+
+    $geminiRoot = Join-Path $env:LOCALAPPDATA "Google\Gemini"
+    $exe = $null
+    if (Test-Path $geminiRoot) {
+        $r.Installed = $true
+        $bits += "Folder: $geminiRoot"
+        try {
+            $found = Get-ChildItem -Path $geminiRoot -Recurse -Filter "Gemini.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $found) {
+                $found = Get-ChildItem -Path $geminiRoot -Recurse -Filter "gemini.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            }
+            if ($found) { $exe = $found.FullName }
+        } catch {}
+    }
+    if (-not $exe) {
+        $exe = Test-PathAny @(
+            "$env:LOCALAPPDATA\Google\Gemini\Gemini.exe",
+            "$env:LOCALAPPDATA\Google\Gemini\Application\Gemini.exe",
+            "$env:LOCALAPPDATA\Programs\Google\Gemini\Gemini.exe"
+        )
+        if ($exe -and ([string]$exe).Contains("*")) { $exe = $null }
+    }
+    if ($exe) {
+        $r.Installed = $true
+        $bits += "Executable: $exe"
+        $ver = Get-FileVersionSafe $exe
+        if ($ver) { $r.Version = $ver }
+    }
+
+    if (-not $r.Installed) {
+        $pkgs = Get-AppxByName "Google.Gemini*"
+        if (-not $pkgs) { $pkgs = Get-AppxByName "*GeminiApp*" }
+        if ($pkgs) {
+            $pkg = $pkgs | Select-Object -First 1
+            $r.Installed = $true
+            $r.Version = $pkg.Version
+            $bits += "Package: $($pkg.Name)"
+        }
+    }
+
+    if (-not $r.Installed) {
+        try {
+            $unG = Get-UninstallApps @("Gemini","Google Gemini*")
+            foreach ($u in @($unG)) {
+                $pub = [string]$u.Publisher
+                $dn = [string]$u.DisplayName
+                if ($dn -like "*Desktop*" -or $dn -like "*GeminiDesktop*") { continue }
+                if ($pub -match '(?i)google') {
+                    $r.Installed = $true
+                    $bits += "Uninstall entry: $dn"
+                    if ($u.DisplayVersion) { $r.Version = $u.DisplayVersion }
+                    break
+                }
+            }
+        } catch {}
+    }
+
+    if ($r.Installed) {
+        $r.Details = (($bits | Where-Object { $_ }) -join " | ")
+        if (-not $r.Details) { $r.Details = "Official Gemini desktop signals found" }
+        Set-ScanStatus $r "Installed"
+    } else {
+        Set-ScanStatus $r "Not Installed"
+        $r.Details = "No official Gemini desktop app (Omaha GUID or %LOCALAPPDATA%\Google\Gemini). Chrome Gemini is a separate row."
+        $r.DisableHint = ""
+    }
+    return $r
+}
+
+function Scan-ClaudeCode {
+    $r = New-Result "Claude Code"
+    $r.DisableHint = "Windows Settings > Apps > Installed apps > Claude Code > Uninstall. If it is not listed, File Explorer > your user folder > .local\bin > delete claude.exe."
+    $exe = Test-PathAny @(
+        "$env:USERPROFILE\.local\bin\claude.exe",
+        "$env:LOCALAPPDATA\Programs\claude-code\claude.exe",
+        "$env:LOCALAPPDATA\Programs\Claude Code\claude.exe"
+    )
+    if ($exe -and ([string]$exe).Contains("*")) { $exe = $null }
+    $data = Test-PathAny @(
+        "$env:USERPROFILE\.claude",
+        "$env:USERPROFILE\.claude-code",
+        "$env:LOCALAPPDATA\Programs\claude-code",
+        "$env:LOCALAPPDATA\Programs\Claude Code"
+    )
+    $desc = ""
+    if ($exe) {
+        try { $desc = [string](Get-Item $exe).VersionInfo.FileDescription } catch {}
+        if (-not $desc) { try { $desc = [string](Get-Item $exe).VersionInfo.ProductName } catch {} }
+    }
+    $looksClaude = ($desc -match '(?i)claude')
+    $un = $null
+    try { $un = Get-UninstallApps @("Claude Code*","Anthropic Claude Code*") } catch {}
+    if (($exe -and $data) -or ($exe -and $looksClaude) -or $un) {
+        $r.Installed = $true
+        if ($exe) {
+            $r.Details = "Executable: $exe"
+            $r.Version = Get-FileVersionSafe $exe
+            if ($desc) { $r.Details += " | $desc" }
+        } elseif ($un) {
+            $r.Details = "Uninstall entry: $($un[0].DisplayName)"
+            if ($un[0].DisplayVersion) { $r.Version = $un[0].DisplayVersion }
+        }
+        if ($data) { $r.Details = (($r.Details + " | Data: $data").Trim(" |")) }
+        Set-ScanStatus $r "Installed" "Claude Code"
+    } else {
+        Set-ScanStatus $r "Not Installed"
+        $r.Details = "No Claude Code install (claude.exe plus .claude folder, or a Claude version string)"
+        $r.DisableHint = ""
+    }
+    return $r
+}
+
+function Scan-CherryStudio {
+    $r = New-Result "Cherry Studio"
+    $r.DisableHint = "Windows Settings > Apps > Installed apps > Cherry Studio > Uninstall."
+    $exe = Test-PathAny @(
+        "$env:LOCALAPPDATA\Programs\Cherry Studio\Cherry Studio.exe",
+        "$env:LOCALAPPDATA\Programs\CherryStudio\CherryStudio.exe",
+        "$env:LOCALAPPDATA\Programs\Cherry Studio\CherryStudio.exe",
+        "${env:ProgramFiles}\Cherry Studio\Cherry Studio.exe"
+    )
+    if ($exe -and ([string]$exe).Contains("*")) { $exe = $null }
+    $data = Test-PathAny @(
+        "$env:APPDATA\CherryStudio",
+        "$env:LOCALAPPDATA\CherryStudio"
+    )
+    if ($exe) {
+        $r.Installed = $true
+        $r.Details = "Executable: $exe"
+        $r.Version = Get-FileVersionSafe $exe
+        Set-ScanStatus $r "Installed"
+    } elseif ($data) {
+        $r.Installed = $true
+        $r.Details = "Data folder: $data"
+        Set-ScanStatus $r "Installed" "Data present"
+    } else {
+        $unC = $null
+        try { $unC = Get-UninstallApps @("Cherry Studio*") } catch {}
+        if ($unC) {
+            $r.Installed = $true
+            $r.Details = "Uninstall entry: $($unC[0].DisplayName)"
+            if ($unC[0].DisplayVersion) { $r.Version = $unC[0].DisplayVersion }
+            Set-ScanStatus $r "Installed" "Uninstall registry"
+        } else {
+            Set-ScanStatus $r "Not Installed"
+            $r.Details = "No Cherry Studio executable, data folder, or uninstall entry found"
+            $r.DisableHint = ""
+        }
+    }
+    return $r
+}
+
+function Scan-LibreChat {
+    $r = New-Result "LibreChat"
+    $r.DisableHint = "If LibreChat appears in Windows Settings > Apps, click Uninstall. If you use Docker Desktop, open Docker Desktop and stop or delete the LibreChat container."
+    $folder = Test-PathAny @(
+        "$env:USERPROFILE\LibreChat",
+        "$env:USERPROFILE\librechat",
+        "$env:LOCALAPPDATA\LibreChat",
+        "$env:USERPROFILE\.librechat"
+    )
+    $portOpen = $false
+    try { $portOpen = Test-LocalPortOpen 3080 } catch {}
+    if ($folder) {
+        $r.Installed = $true
+        $r.Details = "Folder: $folder"
+        if ($portOpen) { $r.Details += " | Port 3080 open" }
+        Set-ScanStatus $r "Installed" "Install folder present"
+    } else {
+        Set-ScanStatus $r "Not Installed"
+        $r.Details = "No LibreChat folder found"
+        $r.DisableHint = ""
+    }
+    return $r
+}
+
+
 function Scan-Perplexity {
     $r = New-Result "Perplexity"
     $exe = Test-PathAny @(
@@ -1162,6 +1582,7 @@ function Scan-Perplexity {
 }
 
 function Scan-EdgeCopilot {
+    # Edge: Copilot sidebar + OptGuide weights. First version 112.
     $r = New-Result "Microsoft Edge + Copilot / AI"
     $r.DisableHint = "Edge Settings > Sidebar > turn off Copilot. Settings > System > turn off On-device AI."
     $edge = Test-PathAny @(
@@ -1295,14 +1716,23 @@ function Scan-EdgeCopilot {
         Set-ScanStatus $r "Activated" "On-device model on disk"
     } elseif ($onDeviceSettingOn -or $sidebarOn) {
         $r.Installed = $true
-        Set-ScanStatus $r "Installed, optional AI off" "AI on in settings; no large weights.bin on disk"
+        Set-ScanStatus $r "Activated" "AI on in settings; no large weights.bin on disk"
     } elseif ($disabled -or $modelDisabled) {
         $r.Installed = $true
-        Set-ScanStatus $r "Installed, optional AI off" "Sidebar or on-device AI turned off; no weights.bin"
+        Set-ScanStatus $r "Deactivated" "Sidebar or on-device AI turned off; no weights.bin"
     } else {
         $r.Installed = $false
         Set-ScanStatus $r "None Found on Disk" "Edge present; no on-device model and sidebar not enabled"
     }
+    $sideTxt = "unknown"
+    if ($sidebarOn) { $sideTxt = "on" }
+    elseif ($disabled) { $sideTxt = "off" }
+    $modelTxt = "not downloaded"
+    if ($weightsPresent -and $modelDisabled) { $modelTxt = "on disk but blocked" }
+    elseif ($weightsPresent) { $modelTxt = "on disk" }
+    elseif ($modelDisabled) { $modelTxt = "blocked" }
+    elseif ($onDeviceSettingOn) { $modelTxt = "setting on, not downloaded" }
+    $r.Details += " | Copilot sidebar: $sideTxt. On-device model: $modelTxt."
     if ($activatedHints.Count -gt 0) {
         $r.Details += " | " + ($activatedHints -join "; ")
     }
@@ -1325,7 +1755,7 @@ function Scan-Ollama {
         $r.Details = "Binary: $exe"
         $r.Version = Get-FileVersionSafe $exe
         if ($models) { $r.Details += " | Models folder present" }
-        $proc = Get-Process -Name "ollama*" -ErrorAction SilentlyContinue
+        $proc = @(Get-CachedProcesses) | Where-Object { $_.ProcessName -like "ollama*" }
         if ($proc) {
             Set-ScanStatus $r "Installed" "Process running - see Running column for loaded models"
         } else {
@@ -1632,6 +2062,7 @@ function Scan-ComfyUI {
 }
 
 function Scan-OperaAI {
+    # Opera: Aria cutoff 100. Settings > Sidebar.
     $r = New-Result "Opera Browser (Aria / Opera AI)"
     $r.DisableHint = "Opera Settings > Sidebar > turn off Aria / Opera AI."
     $exe = Test-PathAny @(
@@ -1647,7 +2078,7 @@ function Scan-OperaAI {
         if ($reg -and $reg.'(default)') {
             $r.Installed = $true
             $r.Details = "Detected via App Paths registry"
-            Set-ScanStatus $r "Installed, optional AI off" "AI activation not confirmed"
+            Set-ScanStatus $r "Unknown" "AI setting unknown"
             return $r
         }
         Set-ScanStatus $r "Not Installed"
@@ -1666,7 +2097,7 @@ function Scan-OperaAI {
         Set-ScanStatus $r "None Found on Disk" "Opera $opMajor present; no Aria on this version"
         return $r
     }
-    Set-ScanStatus $r "Installed, optional AI off" "Aria activation not confirmed"
+    Set-ScanStatus $r "Unknown" "AI setting unknown"
 
     # Opera prefs often under Local AppData Opera Stable
     $prefCandidates = @(
@@ -1689,6 +2120,7 @@ function Scan-OperaAI {
 }
 
 function Scan-BraveLeo {
+    # Brave: Leo from 1.52 or Chromium 112. Settings > Leo.
     $r = New-Result "Brave Browser (Leo AI)"
     $r.DisableHint = "Brave Settings > Leo > turn off Leo AI."
     $exe = Test-PathAny @(
@@ -1722,7 +2154,7 @@ function Scan-BraveLeo {
         Set-ScanStatus $r "None Found on Disk" "Brave $brMajor present; no Leo AI on this version"
         return $r
     }
-    Set-ScanStatus $r "Installed, optional AI off" "Leo activation not confirmed"
+    Set-ScanStatus $r "Unknown" "AI setting unknown"
 
     # Policy can disable Leo
     foreach ($p in @(
@@ -1732,7 +2164,7 @@ function Scan-BraveLeo {
         try {
             $val = Get-ItemProperty -Path $p -Name "BraveAIChatEnabled" -ErrorAction SilentlyContinue
             if ($null -ne $val -and $val.BraveAIChatEnabled -eq 0) {
-                Set-ScanStatus $r "Installed, optional AI off" "Leo disabled by policy"
+                Set-ScanStatus $r "Deactivated" "Leo disabled by policy"
                 $r.Details += " | BraveAIChatEnabled=0"
                 return $r
             }
@@ -1762,6 +2194,7 @@ function Scan-BraveLeo {
 }
 
 function Scan-Comet {
+    # Comet: AI-native browser. Treat install as the product.
     $r = New-Result "Perplexity Comet Browser"
     $r.DisableHint = "Comet Settings > turn off AI features (or uninstall Comet from Windows Settings > Apps)."
     $exe = Test-PathAny @(
@@ -1790,7 +2223,7 @@ function Scan-Comet {
         try {
             $pr = Get-Content $prefs -Raw -ErrorAction Stop
             if ($pr -match '"ai_enabled"\s*:\s*false' -or $pr -match '"comet_ai"\s*:\s*false' -or $pr -match '"assistant_enabled"\s*:\s*false') {
-                Set-ScanStatus $r "Installed, optional AI off" "AI setting off in Comet preferences"
+                Set-ScanStatus $r "Deactivated" "AI setting off in Comet preferences"
             } elseif ($pr -match '"ai_enabled"\s*:\s*true' -or $pr -match '"comet_ai"\s*:\s*true') {
                 Set-ScanStatus $r "Activated" "AI setting on in Comet preferences"
             }
@@ -1800,6 +2233,7 @@ function Scan-Comet {
 }
 
 function Scan-Firefox {
+    # Firefox: Labs 130-135, General Browsing 136-147, AI Controls 148+.
     $r = New-Result "Mozilla Firefox (optional AI features)"
     $r.DisableHint = "Firefox Settings > AI Controls > turn on Block AI enhancements."
     $exe = Test-PathAny @(
@@ -1835,16 +2269,27 @@ function Scan-Firefox {
 
     $ffMajor = 0
     if ($r.Version -match '^(\d+)') { $ffMajor = [int]$Matches[1] }
-    # 133-147: gen AI ships without Settings > AI Controls
-    # 148+: Settings > AI Controls (Block AI enhancements)
-    $ffHasAiBundle = ($ffMajor -ge 133)
+    $ffHasAiBundle = ($ffMajor -ge 130)
     $ffHasAiControls = ($ffMajor -ge 148)
+
+    if ($ffMajor -ge 148) {
+        $r.DisableHint = "Firefox Settings > AI Controls > turn on Block AI enhancements."
+    } elseif ($ffMajor -eq 147) {
+        $r.DisableHint = "Firefox Settings > General > Browsing > turn off Enable link previews and any AI options there."
+    } elseif ($ffMajor -ge 136) {
+        $r.DisableHint = "Firefox Settings > General > Browsing > turn off Enable link previews. Settings > General > Browser Layout > Show sidebar, then uncheck AI chatbot if listed."
+    } elseif ($ffMajor -ge 130) {
+        $r.DisableHint = "Firefox Settings > Firefox Labs > turn off AI chatbot. If Labs is not listed: Settings > General > Tabs."
+    } else {
+        $r.DisableHint = ""
+    }
 
     try {
         $polAi = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\AIControls" -ErrorAction SilentlyContinue
         $polGen = Get-ItemProperty "HKLM:\SOFTWARE\Policies\Mozilla\Firefox\GenerativeAI" -ErrorAction SilentlyContinue
         if ($polAi -or $polGen) { $r.Details += " | Policy keys present under Mozilla\Firefox" }
     } catch {}
+
     if ($ffMajor -gt 0) {
         $r.Details += " | Firefox $ffMajor"
         if (-not $ffHasAiBundle) {
@@ -1855,21 +2300,19 @@ function Scan-Firefox {
         }
         if (-not $ffHasAiControls) {
             $r.Details += " | This version includes AI but has no Settings AI Controls page"
-            $r.DisableHint = "This Firefox version includes AI but has no Settings > AI Controls page. Click the sidebar button and uncheck AI Chatbot. Then Firefox > Help > About Firefox > restart to update. After 148 use Settings > AI Controls > turn on Block AI enhancements."
-        } else {
-            $r.DisableHint = "Firefox Settings > AI Controls > turn on Block AI enhancements."
         }
     }
 
     $enabledFlags = @()
     $disabledFlags = @()
     $blockedControls = @()
+    $availableControls = @()
+    $providerSet = $false
     $profileChecked = $false
 
     $profilesRoot = "$env:APPDATA\Mozilla\Firefox\Profiles"
     if (Test-Path $profilesRoot) {
         try {
-            # Prefer user.js overrides, then prefs.js (default + first few profiles)
             $files = @()
             $files += Get-ChildItem $profilesRoot -Recurse -Filter "user.js" -ErrorAction SilentlyContinue | Select-Object -First 3
             $files += Get-ChildItem $profilesRoot -Recurse -Filter "prefs.js" -ErrorAction SilentlyContinue | Select-Object -First 5
@@ -1879,7 +2322,6 @@ function Scan-Firefox {
                 $c = Get-Content $pf.FullName -Raw -ErrorAction SilentlyContinue
                 if (-not $c) { continue }
 
-                # Master / feature booleans that are ON
                 $onPrefs = @(
                     'browser\.ml\.enable',
                     'browser\.ml\.chat\.enabled',
@@ -1904,7 +2346,11 @@ function Scan-Firefox {
                     }
                 }
 
-                # AI Controls string prefs: "blocked" | "available" | "enabled"
+                if ($c -match 'user_pref\(\s*"browser\.ml\.chat\.provider"\s*,\s*"(https?:[^"]+)"\s*\)') {
+                    $providerSet = $true
+                    if ($enabledFlags -notcontains 'browser.ml.chat.provider') { $enabledFlags += 'browser.ml.chat.provider' }
+                }
+
                 $controlPrefs = @(
                     'browser\.ai\.control\.default',
                     'browser\.ai\.control\.sidebarChatbot',
@@ -1918,8 +2364,9 @@ function Scan-Firefox {
                         $short = ($p -replace '\\', '')
                         if ($blockedControls -notcontains $short) { $blockedControls += $short }
                     }
-                    if ($c -match ("user_pref\(\s*`"$p`"\s*,\s*`"enabled`"\s*\)")) {
+                    if ($c -match ("user_pref\(\s*`"$p`"\s*,\s*`"(enabled|available)`"\s*\)")) {
                         $short = ($p -replace '\\', '')
+                        if ($availableControls -notcontains $short) { $availableControls += $short }
                         if ($enabledFlags -notcontains $short) { $enabledFlags += $short }
                     }
                 }
@@ -1929,9 +2376,10 @@ function Scan-Firefox {
         }
     }
 
-    # Decision: blocked/disabled wins if master controls say so
     $masterBlocked = ($blockedControls -contains 'browser.ai.control.default') -or
                      ($disabledFlags -contains 'browser.ml.enable')
+    $chatOff = ($disabledFlags -contains 'browser.ml.chat.enabled')
+    $sidebarBlocked = ($blockedControls -contains 'browser.ai.control.sidebarChatbot')
 
     if ($masterBlocked -and $enabledFlags.Count -eq 0) {
         Set-ScanStatus $r "Deactivated" "AI blocked in Firefox Settings"
@@ -1939,10 +2387,14 @@ function Scan-Firefox {
         if ($blockedControls.Count -gt 0) { $parts += "blocked: $($blockedControls.Count) controls" }
         if ($disabledFlags.Count -gt 0) { $parts += "off: $($disabledFlags.Count) ml prefs" }
         $r.Details += " | " + ($parts -join "; ")
-    } elseif ($enabledFlags.Count -gt 0) {
+    } elseif ($chatOff -and $sidebarBlocked -and -not $providerSet) {
+        Set-ScanStatus $r "Deactivated" "Chatbot off in prefs"
+        $r.Details += " | browser.ml.chat.enabled=false"
+    } elseif ($enabledFlags.Count -gt 0 -or $providerSet) {
         Set-ScanStatus $r "Activated" "AI features enabled in prefs"
         $sample = ($enabledFlags | Select-Object -First 4) -join ", "
         $r.Details += " | Enabled: $sample"
+        if ($providerSet) { $r.Details += " | chatbot provider set" }
         if ($blockedControls.Count -gt 0) {
             $r.Details += " | Some controls blocked: $($blockedControls.Count)"
         }
@@ -1950,22 +2402,26 @@ function Scan-Firefox {
         Set-ScanStatus $r "Deactivated" "AI prefs set off/blocked"
         $r.Details += " | disabled=$($disabledFlags.Count); blocked=$($blockedControls.Count)"
     } elseif ($profileChecked) {
-        if ($ffHasAiBundle -and -not $ffHasAiControls) {
-            Set-ScanStatus $r "Installed" "AI included; no Settings disable page (Firefox $ffMajor)"
-            $r.Details += " | No AI Controls page on this version. Prefs have no ml overrides"
-        } elseif ($ffHasAiControls) {
-            Set-ScanStatus $r "Installed, optional AI off" "AI optional; not enabled in prefs"
-            $r.Details += " | No browser.ml or AI Controls overrides found. Defaults apply"
+        if ($ffHasAiControls) {
+            Set-ScanStatus $r "Activated" "AI Controls Block left off; chatbot available"
+            $r.Details += " | No blocked AI Controls prefs. Chatbot can run while Block AI is off"
+        } elseif ($ffMajor -ge 130) {
+            Set-ScanStatus $r "Installed" "AI included (Firefox $ffMajor)"
+            $r.Details += " | No browser.ml overrides in prefs. Use the version-specific Settings path to turn it off"
         } else {
-            Set-ScanStatus $r "Installed" "No bundled generative AI Controls on this version"
-            $r.Details += " | No browser.ml or AI Controls overrides found"
+            $r.Installed = $false
+            $r.DisableHint = ""
+            Set-ScanStatus $r "None Found on Disk" "No bundled generative AI"
         }
     } else {
-        if ($ffHasAiBundle -and -not $ffHasAiControls) {
-            Set-ScanStatus $r "Installed" "AI included; no Settings disable page (Firefox $ffMajor)"
+        if ($ffHasAiControls) {
+            Set-ScanStatus $r "Activated" "AI Controls Block left off; chatbot available"
             $r.Details += " | Could not read profile prefs"
+        } elseif ($ffMajor -ge 130) {
+            Set-ScanStatus $r "Unknown" "AI setting unknown"
+            $r.Details += " | Could not read profile prefs (Firefox $ffMajor)"
         } else {
-            Set-ScanStatus $r "Installed, optional AI off" "Could not read Firefox profile prefs"
+            Set-ScanStatus $r "None Found on Disk" "Could not read prefs; this Firefox version has no bundled AI"
             $r.Details += " | Profiles folder missing or empty"
         }
     }
@@ -2064,6 +2520,8 @@ function Get-ModelStorageRoots {
 function Initialize-ModelNameIndex {
     if ($null -ne $script:ModelNameIndex) { return }
 
+    $script:ModelGgufCount = 0
+    $script:ModelGgufRoots = @()
     $names = New-Object System.Collections.Generic.List[string]
     $seen = @{}
     $add = {
@@ -2085,7 +2543,13 @@ function Initialize-ModelNameIndex {
                     $_.Extension -match '^\.(gguf|safetensors|ggml|bin|ot)$' -and
                     $_.FullName -notmatch '\\blobs\\'
                 } |
-                ForEach-Object { & $add $_.Name }
+                ForEach-Object {
+                    & $add $_.Name
+                    if ($_.Extension -eq ".gguf") {
+                        $script:ModelGgufCount++
+                        if ($script:ModelGgufRoots -notcontains $root) { $script:ModelGgufRoots += $root }
+                    }
+                }
         } catch {
             Write-ErrorLog "Error indexing models in $root" -ErrorRecord $_
         }
@@ -2602,12 +3066,13 @@ function Scan-FoundryLocal {
         if ($regVer) { $r.Version = $regVer }
         Set-ScanStatus $r "Installed" "Uninstall registry"
     } elseif ($data) {
-        $r.Installed = $true
-        $r.Details = "Data folder: $data"
-        Set-ScanStatus $r "Installed" "Data present"
+        $r.Installed = $false
+        $r.Details = "Leftover data folder only: $data"
+        Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe or Apps entry"
+        $r.DisableHint = ""
     } else {
         Set-ScanStatus $r "Not Installed"
-        $r.Details = "No Foundry Local executable, Apps entry, or data folder found"
+        $r.Details = "No Foundry Local executable or Apps entry found"
     }
     return $r
 }
@@ -2836,26 +3301,21 @@ function Scan-TextGenWebUI {
 function Scan-LocalModels {
     $r = New-Result "Local AI Models (other / summary)"
     Set-ScanStatus $r "None Found on Disk"
-    $roots = Get-ModelStorageRoots
-    $foundPaths = @()
+    Initialize-ModelNameIndex
+    $roots = @(Get-ModelStorageRoots | Where-Object { Test-Path $_ })
     $ggufCount = 0
-
-    foreach ($root in $roots) {
-        if (-not (Test-Path $root)) { continue }
-        $foundPaths += $root
-        try {
-            $ggufs = Get-ChildItem -Path $root -Recurse -Filter "*.gguf" -ErrorAction SilentlyContinue -File
-            if ($ggufs) { $ggufCount += @($ggufs).Count }
-        } catch {}
-    }
+    if ($null -ne $script:ModelGgufCount) { $ggufCount = [int]$script:ModelGgufCount }
+    $foundPaths = @()
+    if ($script:ModelGgufRoots) { $foundPaths = @($script:ModelGgufRoots) }
+    if ($foundPaths.Count -eq 0) { $foundPaths = @($roots) }
 
     if ($ggufCount -gt 0) {
         $r.Installed = $true
         Set-ScanStatus $r "Installed" "GGUF files found"
         $r.Details = "GGUF files: $ggufCount | Roots: " + (($foundPaths | Select-Object -First 4) -join "; ")
-    } elseif ($foundPaths.Count -gt 0) {
+    } elseif ($roots.Count -gt 0) {
         Set-ScanStatus $r "None Found on Disk" "Storage folders present; no GGUF files"
-        $r.Details = "GGUF files: 0 | Roots: " + (($foundPaths | Select-Object -First 4) -join "; ")
+        $r.Details = "GGUF files: 0 | Roots: " + (($roots | Select-Object -First 4) -join "; ")
     } else {
         $r.Details = "No model folders or GGUF files found in standard locations"
     }
@@ -2865,6 +3325,11 @@ function Scan-LocalModels {
 function Resize-NameAndDisableColumns {
     param($ListView)
     if (-not $ListView) { return }
+    if ($script:ColWidthsSaved -and $ListView.Columns.Count -gt 6) {
+        if ($script:ColWidth0 -gt 0) { $ListView.Columns[0].Width = $script:ColWidth0 }
+        if ($script:ColWidth6 -gt 0) { $ListView.Columns[6].Width = $script:ColWidth6 }
+        return
+    }
     $styleContent = [System.Windows.Forms.ColumnHeaderAutoResizeStyle]::ColumnContent
     $styleHeader = [System.Windows.Forms.ColumnHeaderAutoResizeStyle]::HeaderSize
     foreach ($idx in @(0, 6)) {
@@ -2878,6 +3343,11 @@ function Resize-NameAndDisableColumns {
                 $ListView.Columns[$idx].Width = $headerW
             }
         }
+    }
+    if ($ListView.Items.Count -gt 0 -and $ListView.Columns.Count -gt 6) {
+        $script:ColWidth0 = $ListView.Columns[0].Width
+        $script:ColWidth6 = $ListView.Columns[6].Width
+        $script:ColWidthsSaved = $true
     }
 }
 
@@ -2909,22 +3379,35 @@ function Add-ResultToListView {
     $item.SubItems.Add( $r.Version ) | Out-Null
     $item.SubItems.Add( $r.Details ) | Out-Null
     $disableText = ""
-    if ($r.Installed -or $r.Name -like "Microsoft Edge*") {
+    if ($r.Installed) {
         if ($r.DisableHint) { $disableText = [string]$r.DisableHint }
         else { $disableText = Get-HowToDisable -Name $r.Name }
     }
     $item.SubItems.Add( $disableText ) | Out-Null
 
-    $isRunning = ($r.Running -like "Yes*")
     $st = [string]$r.Activated
-    if ($isRunning) {
-        $item.ForeColor = [System.Drawing.Color]::Firebrick
-    } elseif ($st -eq "Activated") {
-        $item.ForeColor = [System.Drawing.Color]::DarkBlue
-    } elseif ($st -eq "Installed" -or $st -eq "Installed, optional AI off" -or $st -eq "Deactivated") {
-        $item.ForeColor = [System.Drawing.Color]::DarkGreen
+    $isBrowser = $false
+    try { $isBrowser = Test-IsBrowserAiRow $r.Name } catch {}
+    if ($isBrowser) {
+        if ($st -eq "App running") {
+            $item.ForeColor = [System.Drawing.Color]::Firebrick
+        } elseif ($st -eq "Activated" -or $st -eq "Model loaded") {
+            $item.ForeColor = [System.Drawing.Color]::DarkBlue
+        } elseif ($st -eq "Installed" -or $st -eq "Deactivated" -or $st -eq "Unknown") {
+            $item.ForeColor = [System.Drawing.Color]::DarkGreen
+        } else {
+            $item.ForeColor = [System.Drawing.Color]::Gray
+        }
     } else {
-        $item.ForeColor = [System.Drawing.Color]::Gray
+        if ($st -eq "App running") {
+            $item.ForeColor = [System.Drawing.Color]::DarkBlue
+        } elseif ($st -eq "Model loaded" -or $st -eq "Activated") {
+            $item.ForeColor = [System.Drawing.Color]::Firebrick
+        } elseif ($st -eq "Installed" -or $st -eq "Deactivated" -or $st -eq "Unknown") {
+            $item.ForeColor = [System.Drawing.Color]::DarkGreen
+        } else {
+            $item.ForeColor = [System.Drawing.Color]::Gray
+        }
     }
     [void]$ListView.Items.Add($item)
     $item.EnsureVisible()
@@ -2935,7 +3418,7 @@ function Test-RowIsDetected {
     if (-not $r) { return $false }
     if ($r.Running -like "Yes*") { return $true }
     $st = [string]$r.Activated
-    return ($st -eq "Installed" -or $st -eq "Installed, optional AI off" -or $st -eq "Deactivated" -or $st -eq "Activated")
+    return ($st -eq "Installed" -or $st -eq "Deactivated" -or $st -eq "Unknown" -or $st -eq "Activated" -or $st -eq "App running" -or $st -eq "Model loaded")
 }
 
 function Update-DetectedButtonStyle {
@@ -3111,9 +3594,14 @@ $btnScan.Add_Click({
     [System.Windows.Forms.Application]::DoEvents()
 
     Write-Log "SCAN: started by user"
+    $script:ProcSnap = $null
+    try { $script:ProcSnap = @(Get-Process -ErrorAction SilentlyContinue) } catch { $script:ProcSnap = @() }
     $script:AllAppx = $null
+    try { $script:AllAppx = @(Get-AppxPackage -ErrorAction SilentlyContinue) } catch { $script:AllAppx = @() }
     $script:ModelNameIndex = $null
     $script:ModelNameIndexBuilt = $false
+    $script:ModelGgufCount = 0
+    $script:ModelGgufRoots = @()
 
     # --- On-device model check only (not browsers / host apps) ---
     $lblStatus.Text = "Checking for on-device models loaded in memory..."
@@ -3145,6 +3633,12 @@ $btnScan.Add_Click({
         $form.Refresh()
         [System.Windows.Forms.Application]::DoEvents()
         Initialize-ModelNameIndex
+        $nIdx = 0
+        $nGguf = 0
+        if ($script:ModelNameIndex) { $nIdx = @($script:ModelNameIndex).Count }
+        if ($null -ne $script:ModelGgufCount) { $nGguf = [int]$script:ModelGgufCount }
+        $lblStatus.Text = "Indexed $nIdx model names ($nGguf GGUF files)"
+        $form.Refresh()
         [System.Windows.Forms.Application]::DoEvents()
     }
 
@@ -3155,6 +3649,7 @@ $btnScan.Add_Click({
             Fns = @(
                 { Scan-ChatGPT },
                 { Scan-Claude },
+                { Scan-GeminiDesktop },
                 { Scan-GrokNote },
                 { Scan-Copilot },
                 { Scan-Ollama },
@@ -3210,11 +3705,14 @@ $btnScan.Add_Click({
             Header = "Other Apps"
             Fns = @(
                 { Scan-AnythingLLM },
+                { Scan-CherryStudio },
+                { Scan-ClaudeCode },
                 { Scan-ComfyUI },
                 { Scan-Cursor },
                 { Scan-GPT4All },
                 { Scan-Jan },
                 { Scan-KoboldCpp },
+                { Scan-LibreChat },
                 { Scan-LlamaCpp },
                 { Scan-LMStudio },
                 { Scan-Msty },
@@ -3257,7 +3755,8 @@ $btnScan.Add_Click({
         try {
             $r = & $fn
             if ($r) {
-                $r.Running = Test-IsRunning -AiName $r.Name -OllamaLoadedModels $ollamaLoaded -LmStudioLoadedModels $lmStudioLoaded -CompatLoadedModels $compatLoaded
+                $modelRun = Test-IsRunning -AiName $r.Name -OllamaLoadedModels $ollamaLoaded -LmStudioLoadedModels $lmStudioLoaded -CompatLoadedModels $compatLoaded
+                $r = Set-RunningAndStatus -Result $r -ModelRunning $modelRun
                 if ($r.Name -like "Ollama*") {
                     if ($ollamaLoaded -and $ollamaLoaded.Count -gt 0) {
                         $r.Details = (($r.Details + " | Loaded in memory: " + ($ollamaLoaded -join ", ")).Trim(" |"))
@@ -3279,7 +3778,7 @@ $btnScan.Add_Click({
                 [System.Windows.Forms.Application]::DoEvents()
                 if ($r.Installed -or ($r.Running -like "Yes*")) {
                     $tag = "FOUND"
-                    if ($r.Activated -eq "Installed, optional AI off" -or $r.Activated -eq "Deactivated") {
+                    if ($r.Activated -eq "Deactivated") {
                         $tag = "FOUND (AI off)"
                     }
                     Write-ErrorLog ("{0}: {1} | Installed={2} | Running={3} | Status={4} | Version={5} | Details={6}" -f $tag, $r.Name, $(if ($r.Installed) {"Yes"} else {"No"}), $r.Running, $r.Activated, $r.Version, $r.Details)
@@ -3303,8 +3802,8 @@ $btnScan.Add_Click({
         $installedCount = ($results | Where-Object {
             $_.Running -notlike "Yes*" -and $_.Activated -ne "Activated" -and (
                 $_.Activated -eq "Installed" -or
-                $_.Activated -eq "Installed, optional AI off" -or
-                $_.Activated -eq "Deactivated"
+                $_.Activated -eq "Unknown" -or
+                                $_.Activated -eq "Deactivated"
             )
         }).Count
         if ($script:FilterDetected) { Show-ScanRows -ListView $lv }

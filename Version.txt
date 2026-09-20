@@ -8,6 +8,105 @@ How to use this file
 - Keep newest version at the top.
 
 ==============================================================================
+1.5.8  (2026-09-20)
+==============================================================================
+Added
+- Status Unknown (Green) when a browser has AI but the on/off setting
+  cannot be read (Firefox prefs, Opera Aria, Brave Leo).
+
+Changed
+- Detected treats Unknown like other non-gray rows.
+- Foundry Local leftover data folder without exe or Apps entry is not Installed.
+- Name and How to Disable column widths are saved after the first scan.
+  Rescan keeps those widths.
+- Status bar shows Indexed N model names (M GGUF files) after the folder walk.
+
+==============================================================================
+1.5.7  (2026-09-20)
+==============================================================================
+Changed
+- One process snapshot at scan start. Running checks reuse that list.
+- Appx package list is loaded once per scan.
+- Local model GGUF count reuses the model-folder index. Those folders
+  are not walked a second time.
+
+Removed
+- Dev-only launchers Run_AI_Scanner.bat and Run_AI_Scanner.vbs were
+  never in a public ship set. Use PortableAIScanner.exe or right-click
+  the .ps1 > Run with PowerShell.
+
+==============================================================================
+1.5.6  (2026-09-20)
+==============================================================================
+Added
+- Official Gemini desktop detection via Google Update GUID
+  {533DD80C-942A-4464-B6A9-2E59428D784E} and %LOCALAPPDATA%\Google\Gemini.
+- Cherry Studio uninstall registry as a second install signal.
+
+Changed
+- Browser AI-off status is Deactivated when the setting is known off.
+- Firefox unread profile prefs is Installed, not Deactivated.
+- Brave Leo and Opera Aria "activation not confirmed" is Installed, not off.
+- Edge Details always state Copilot sidebar and on-device model separately.
+- Claude Code needs claude.exe plus a .claude folder or a Claude version string.
+  WindowsApps\claude.exe is not enough.
+- Third-party Gemini Desktop folders are ignored. Running is Yes only if the
+  process path contains \Google\Gemini\.
+- Color and Detected lists no longer mention Installed, optional AI off.
+
+Fixed
+- Edge with AI on in settings and no weights.bin is Activated, not off.
+
+==============================================================================
+1.5.5  (2026-09-20)
+==============================================================================
+Added
+- Status App running when a desktop app exe is open and no local model is loaded.
+- Status Model loaded when a local model is in memory.
+
+Changed
+- Installed means on disk and the exe is not open.
+- Running is Yes for App running or Model loaded.
+- Desktop: Blue = App running. Red = Model loaded.
+- Browsers: Blue = AI setting on and browser closed. Red = that browser
+  is open and AI is on.
+
+==============================================================================
+1.5.4  (2026-09-19)
+==============================================================================
+Added
+- Google Gemini desktop app for Windows (separate from Chrome on-device Gemini).
+- Cherry Studio local chat GUI.
+- LibreChat folder / Docker install detection.
+- Claude Code (native installer, WinGet, or npm).
+
+Changed
+- LibreChat is installed only when a LibreChat folder is found. Port 3080
+  alone is not enough.
+
+==============================================================================
+1.5.3  (2026-09-19)
+==============================================================================
+Added
+- Firefox 130-132 Labs AI chatbot detection via browser.ml.chat.enabled.
+- Firefox 148+ treats AI Controls "available"/"enabled" and a set chatbot
+  provider as on. Block AI left off is no longer called optional AI off.
+
+Changed
+- First Firefox AI version is 130, not 133.
+- How to disable text follows the Firefox version: Labs / General Tabs
+  (130-135), General Browsing (136-147), AI Controls (148+).
+- How to disable shows only when Installed is Yes. Edge no longer keeps
+  that column filled when Copilot is off.
+- Running the .ps1 from an already-open PowerShell window no longer hides or
+  closes that window. Explorer parent alone is not treated as a one-shot host.
+- Browser scan comments are notes only. They do not run. They list what
+  to re-check when a new browser version ships: first AI version, Settings
+  path to turn it off, pref or policy names, and whether the default is on.
+  Each browser function also has a one-line cutoff (Chrome 126, Edge 112,
+  Opera 100, Brave 1.52, Firefox 130 / 148).
+
+==============================================================================
 1.5.2  (2026-09-15)
 ==============================================================================
 Added
@@ -44,7 +143,7 @@ Changed
 Added
 - AI_Scanner_Legacy.ps1 for Windows 7. Local runtimes, model files, process
   and uninstall-registry checks only.
-- Wrapper and VBS choose the script from the Windows NT version.
+- Wrapper chooses the script from the Windows NT version.
 - Unsupported Windows versions show a not-compatible message and do not start
   either scanner.
 
@@ -266,8 +365,8 @@ Added
 ==============================================================================
 Added
 - Console host is hidden, not minimized.
-- Run_AI_Scanner.vbs launches PowerShell hidden.
-- Run_AI_Scanner.bat calls the VBS launcher.
+- Dev-only (not shipped): Run_AI_Scanner.vbs launched PowerShell hidden.
+- Dev-only (not shipped): Run_AI_Scanner.bat called that VBS file.
 - Main window starts maximized.
 
 ==============================================================================

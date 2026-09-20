@@ -3,7 +3,7 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.5.2"
+$script:AppVersion = "1.5.8"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
@@ -69,12 +69,15 @@ function Test-ShouldCloseHost {
     try {
         $me = Get-WmiObject Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop
         if (-not $me) { return $false }
+        $cmd = [string]$me.CommandLine
+        if ($cmd -match '(?i)-File\s+.*AI_Scanner') { return $true }
         $par = Get-WmiObject Win32_Process -Filter ("ProcessId=" + $me.ParentProcessId) -ErrorAction Stop
         $n = ([string]$par.Name).ToLower()
-        if ($n -match "^(explorer\.exe|wscript\.exe|cscript\.exe)$") { return $true }
+        if ($n -match "^(wscript\.exe|cscript\.exe)$") { return $true }
     } catch {}
     return $false
 }
+
 $script:KeepHostPrompt = -not (Test-ShouldCloseHost)
 if ($script:KeepHostPrompt) { Write-Log "LOAD: launched from a prompt; console will stay open" }
 else { Write-Log "LOAD: launched from exe or Explorer; host console may be hidden" }

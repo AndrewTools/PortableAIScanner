@@ -7,7 +7,7 @@ local models on this PC. It does not install anything.
 License: All rights reserved. You may run this app on your own PC.
 You may not modify or republish it. See LICENSE.txt.
 
-Current version: 1.5.2
+Current version: 1.5.8
 
 
 Files needed to run
@@ -42,9 +42,11 @@ Double-click PortableAIScanner.exe. It picks the script:
 
 Windows 8 and 8.1 are not supported.
 
+Windows 7 uses a smaller checker list.
 Windows 7 only looks for local runtimes and model files
 (Ollama, LM Studio, GPT4All, Jan, llama.cpp, and similar).
 It does not look for Copilot or browser on-device AI.
+Windows 7 uses a smaller checker list.
 
 
 How to run
@@ -77,14 +79,61 @@ What you will see
 -----------------
 The window shows the Windows version and the app version.
 
-  Green  Installed
-  Blue   Activated (Windows 10/11: on-device model file or a
-         clear on switch). Windows 7 does not use Blue.
-  Red    An on-device model is loaded in memory
-  Gray   Not installed, or no on-device model on disk
+Status words:
 
-Running = Yes only when a local model is actually in memory.
-A browser being open does not count as running.
+  Installed                    On disk, exe closed
+  Unknown                      Browser has AI, on/off setting cannot be read
+  App running                  Desktop exe open with no model, or
+                               browser AI on and that browser is open
+  Model loaded                 A local model is in memory
+  Activated                    Browser AI setting on, browser closed
+  Deactivated                  Browser or optional app AI is present and off
+  Not Installed                Product not found
+  None Found on Disk           Browser is there but that version has no AI
+
+Desktop and other apps (ChatGPT, Claude, Gemini Desktop, Copilot,
+Ollama, LM Studio, Cherry Studio, Claude Code, Cursor, and similar):
+
+  Gray   Not Installed
+  Green  Installed - on disk, exe not open. Running = No
+  Blue   App running - exe open, no local model. Running = Yes
+  Red    Model loaded - local model in memory. Running = Yes
+
+Browsers (Chrome Gemini, Edge, Firefox, Brave, Opera):
+
+  Gray   No AI in that version, or browser not installed
+  Green  Installed, Deactivated, or Unknown. Running = No
+  Blue   Activated - AI setting on, browser closed. Running = No
+  Red    App running - AI on and that browser is open. Running = Yes
+
+If Firefox prefs cannot be read, or Brave/Opera AI cannot be proven
+on or off, Status is Unknown (Green). Detected still shows the row.
+
+Opening Chrome with Gemini off stays Green or Gray.
+Every browser uses Deactivated when AI is known off. Edge with the
+AI setting on but no weights.bin is Activated (Blue if Edge is closed).
+
+Official Gemini Desktop is the Google app (Update GUID and
+%LOCALAPPDATA%\Google\Gemini). Third-party Gemini Desktop
+wrappers are ignored. Google has not published the live exe folder.
+
+Local model files (Qwen, Llama, DeepSeek, Gemma, and similar):
+
+  Gray   No files on disk
+  Green  Files on disk, nothing loaded. Running = No
+  Red    That family is loaded in Ollama, LM Studio, or similar.
+         Running = Yes
+  Blue   Not used for model-file rows
+
+Detected hides gray rows. Export list saves the visible rows as CSV.
+Name and How to Disable widths are kept after the first scan.
+During a scan the bar shows Indexed N model names when that walk finishes.
+After the first scan, Name and How to Disable column widths stay put
+on Rescan. While model folders are scanned, the bar shows how many
+names and GGUF files were indexed.
+Name and How to Disable column widths stay the same after the first scan.
+While it indexes local models the status bar shows how many names and
+GGUF files it found.
 
 
 How to disable
