@@ -3,9 +3,84 @@ Version history
 Format: MAJOR.MINOR.PATCH
 
 How to use this file
-- Current app version is shown in the window title and footer (vMAJOR.MINOR.PATCH).
-- Update $script:AppVersion in AI_Scanner.ps1 and add a section here for every release.
+- Current app version is shown in the window title (vMAJOR.MINOR.PATCH).
+- Update $script:AppVersion in AI_Scanner.ps1 and add a section here
+  for every release.
 - Keep newest version at the top.
+
+==============================================================================
+1.6.0  (2026-09-20)
+==============================================================================
+Added
+- Check for update button on the title row.
+
+Changed
+- Firefox 141-148 disable paths and browser.ml.linkPreview.optin.
+- Firefox 147 tab-group AI uses Settings > General > Tabs > Interaction.
+- Firefox 148 Block AI does not cover pageAssist, smartAssist, or
+  browser.ml.enable. If those are on, Status is Activated and Details
+  lists them.
+- Splash stays up at least 700 ms so Loading is readable on a fast start.
+- Wrapper picks Windows 10/11 from ProductName or build 10240+, not
+  CurrentVersion 6.1 first.
+- Model index uses depth 4, a file cap, and an 8 second budget per root.
+- List fill no longer jumps to every new row.
+- Local port probe always closes the socket.
+- Load trap exits if the window was not created.
+- Check for update only opens this project's GitHub release pages.
+- llama.cpp search under Downloads and Desktop is two folders deep.
+- Some desktop hosts treat a leftover data folder as Not Installed.
+- Model index skips browser weights.bin outside OptGuide folders.
+- Notepad and Paint with no stored AI toggle are Unknown.
+- Scan-complete bar uses Green / Blue / Red.
+- Log.txt no longer writes User and Computer.
+- Windows 7: no unused download helper, open port is not Running,
+  model index is GGUF/safetensors only with depth 4 / 20,000 / 8 s,
+  no Internet Explorer row.
+
+Fixed
+- Unused FindWindow import removed from the wrapper.
+- Appx name matching escapes dots before wildcards.
+- Check for update uses one repo setting for the API and the allow-list.
+- Chrome Gemini version parse uses one variable.
+- Unused Aggressive switch removed from the model-family search.
+- Already-running script exits 2 so the wrapper log matches.
+
+==============================================================================
+1.5.9  (2026-09-20)
+==============================================================================
+Added
+- Firefox leftover profile folder is named in Details when firefox.exe
+  is gone. Status stays Not Installed.
+- Firefox Details list Labs chatbot, General > Tabs AI, and link
+  previews separately.
+
+Changed
+- Firefox How to disable names only the feature that is on. Labs and
+  General > Tabs are not treated as the same setting.
+- Firefox 147 treats General > Browsing > Enable link previews as its
+  own item, not mixed into Labs.
+- Firefox 136-147 keeps the link-preview disable path when that setting
+  is on or unknown.
+- Microsoft Copilot Installed is only the Settings > Apps Copilot
+  package (Microsoft.Copilot*). Leftover ms-copilot protocol or
+  WindowsCopilot class is Details only.
+- ChatGPT Appx match is OpenAI.ChatGPT* / OpenAI.Codex* only.
+- Notepad AI Appx match is Microsoft.WindowsNotepad* only.
+- Claude desktop Appx match requires Anthropic in the name or publisher.
+- Cherry Studio, LM Studio, and GPT4All leftover data folders without
+  an exe are Not Installed.
+- Microsoft Copilot and Microsoft 365 Copilot are Activated (Blue) when
+  the app is present and not turned off by policy.
+- Microsoft 365 Copilot uses Office Enable Copilot / TurnOffCallout
+  when found; otherwise Installed.
+- Notepad settings.dat also reads WritingToolsEnabled. Text and image
+  generation Deny or LetAppsAccessSystemAIModels=2 marks Notepad, Paint,
+  and Windows On-Device AI as Deactivated. Installed stays Yes.
+- Notepad, Paint, and Windows On-Device AI are Activated (Blue) when
+  the AI switch is on. Deactivated stays Green.
+- Status bar shows Loading Appx packages before Get-AppxPackage.
+- Exe shows a splash until the main window is ready.
 
 ==============================================================================
 1.5.8  (2026-09-20)
@@ -16,10 +91,10 @@ Added
 
 Changed
 - Detected treats Unknown like other non-gray rows.
-- Foundry Local leftover data folder without exe or Apps entry is not Installed.
+- Foundry Local leftover data folder without exe or Apps entry is not
+  Installed.
 - Name and How to Disable column widths are saved after the first scan.
-  Rescan keeps those widths.
-- Status bar shows Indexed N model names (M GGUF files) after the folder walk.
+- Status bar shows Indexed N model names after the folder walk.
 
 ==============================================================================
 1.5.7  (2026-09-20)
@@ -27,13 +102,11 @@ Changed
 Changed
 - One process snapshot at scan start. Running checks reuse that list.
 - Appx package list is loaded once per scan.
-- Local model GGUF count reuses the model-folder index. Those folders
-  are not walked a second time.
+- Local model GGUF count reuses the model-folder index.
 
 Removed
 - Dev-only launchers Run_AI_Scanner.bat and Run_AI_Scanner.vbs were
-  never in a public ship set. Use PortableAIScanner.exe or right-click
-  the .ps1 > Run with PowerShell.
+  never in a public ship set.
 
 ==============================================================================
 1.5.6  (2026-09-20)
@@ -48,10 +121,10 @@ Changed
 - Firefox unread profile prefs is Installed, not Deactivated.
 - Brave Leo and Opera Aria "activation not confirmed" is Installed, not off.
 - Edge Details always state Copilot sidebar and on-device model separately.
-- Claude Code needs claude.exe plus a .claude folder or a Claude version string.
-  WindowsApps\claude.exe is not enough.
-- Third-party Gemini Desktop folders are ignored. Running is Yes only if the
-  process path contains \Google\Gemini\.
+- Claude Code needs claude.exe plus a .claude folder or a Claude version
+  string. WindowsApps\claude.exe is not enough.
+- Third-party Gemini Desktop folders are ignored. Running is Yes only if
+  the process path contains \Google\Gemini\.
 - Color and Detected lists no longer mention Installed, optional AI off.
 
 Fixed
@@ -61,7 +134,8 @@ Fixed
 1.5.5  (2026-09-20)
 ==============================================================================
 Added
-- Status App running when a desktop app exe is open and no local model is loaded.
+- Status App running when a desktop app exe is open and no local model
+  is loaded.
 - Status Model loaded when a local model is in memory.
 
 Changed
@@ -75,119 +149,110 @@ Changed
 1.5.4  (2026-09-19)
 ==============================================================================
 Added
-- Google Gemini desktop app for Windows (separate from Chrome on-device Gemini).
+- Google Gemini desktop app for Windows (separate from Chrome on-device
+  Gemini).
 - Cherry Studio local chat GUI.
 - LibreChat folder / Docker install detection.
 - Claude Code (native installer, WinGet, or npm).
 
 Changed
-- LibreChat is installed only when a LibreChat folder is found. Port 3080
-  alone is not enough.
+- LibreChat is installed only when a LibreChat folder is found. Port
+  3080 alone is not enough.
 
 ==============================================================================
 1.5.3  (2026-09-19)
 ==============================================================================
 Added
 - Firefox 130-132 Labs AI chatbot detection via browser.ml.chat.enabled.
-- Firefox 148+ treats AI Controls "available"/"enabled" and a set chatbot
-  provider as on. Block AI left off is no longer called optional AI off.
+- Firefox 148+ treats AI Controls available/enabled and a set chatbot
+  provider as on.
 
 Changed
 - First Firefox AI version is 130, not 133.
-- How to disable text follows the Firefox version: Labs / General Tabs
-  (130-135), General Browsing (136-147), AI Controls (148+).
-- How to disable shows only when Installed is Yes. Edge no longer keeps
-  that column filled when Copilot is off.
-- Running the .ps1 from an already-open PowerShell window no longer hides or
-  closes that window. Explorer parent alone is not treated as a one-shot host.
-- Browser scan comments are notes only. They do not run. They list what
-  to re-check when a new browser version ships: first AI version, Settings
-  path to turn it off, pref or policy names, and whether the default is on.
-  Each browser function also has a one-line cutoff (Chrome 126, Edge 112,
-  Opera 100, Brave 1.52, Firefox 130 / 148).
+- How to disable follows the Firefox version: Labs (130-135), General
+  Browsing (136-147), AI Controls (148+).
+- How to disable shows only when Installed is Yes.
+- Starting the .ps1 from an already-open PowerShell window no longer
+  closes that window.
 
 ==============================================================================
 1.5.2  (2026-09-15)
 ==============================================================================
 Added
-- Single-instance check. A second launch asks you to close the open window first.
-- Cancel button. It appears only while a scan is running.
+- Single-instance check. A second launch asks you to close the open
+  window first.
+- Cancel button while a scan is running.
 - Scan button becomes Rescan after the first scan finishes.
 
 Changed
 - Scan button text is Scan.
 - Color legend at the bottom of the window is removed.
-- Export list is at the top and stays hidden until a scan finishes.
-- Detected stays hidden until a scan finishes.
-- PowerShell exits when the window closes so powershell.exe does not stay open.
-- Cancel is also checked during the pre-scan memory and model-index steps.
-- The wrapper holds a mutex and waits until PowerShell exits so a second
-  double-click does not start another copy.
-- Windows 7 legacy window uses Scan / Rescan / Cancel and has no color footer.
-- If you start the script from an already-open command prompt, that prompt
-  stays open. Hide and Exit(0) run only for the exe or a double-click from Explorer.
-- Unknown parent processes keep the prompt (VS Code and other terminals).
-- Wrapper and both scripts use the same mutex name Local\PortableAIScanner.
-- Windows 7 also has Detected and Export list with the same hide rules and CSV.
-- Wrapper no longer redirects PowerShell output. It only waits until the
-  window closes. Rebuild the exe.
-- Detected and Export list button positions are swapped (Detected first).
-- Cancel stays visible after the first scan and is grayed out when no scan is running.
-- Cancel stays visible after the first scan and is grayed out until Rescan.
-- Firefox version is read at scan time. Versions with AI but no Settings AI
-  Controls page (about 130-147) are called out, with sidebar and update steps.
+- Export list and Detected stay hidden until a scan finishes.
+- PowerShell exits when the window closes if it was started from the
+  exe or Explorer.
+- An already-open command prompt stays open after the window closes.
+- Wrapper and both scripts use mutex Local\PortableAIScanner.
+- Windows 7 window uses Scan / Rescan / Cancel, Detected, and Export
+  list with the same hide rules.
+- Cancel stays visible after the first scan and is grayed out when no
+  scan is running.
+- Firefox version is read at scan time. Builds 130-147 with AI but no
+  Settings AI Controls page are called out.
 
 ==============================================================================
 1.5.1  (2026-09-15)
 ==============================================================================
 Added
-- AI_Scanner_Legacy.ps1 for Windows 7. Local runtimes, model files, process
-  and uninstall-registry checks only.
+- AI_Scanner_Legacy.ps1 for Windows 7. Local runtimes, model files,
+  process and uninstall-registry checks only.
 - Wrapper chooses the script from the Windows NT version.
-- Unsupported Windows versions show a not-compatible message and do not start
-  either scanner.
+- Unsupported Windows versions show a not-compatible message and do
+  not start either scanner.
 
 Changed
-- App version is 1.5.1. Windows 10/11 still use AI_Scanner.ps1.
+- Windows 10/11 still use AI_Scanner.ps1.
 
 ==============================================================================
 1.5.0  (2026-09-15)
 ==============================================================================
 Added
-- Export list button (bottom right) saves visible rows as CSV for Excel and LibreOffice.
-- Detected button hides gray (not installed) rows.
+- Export list button saves visible rows as CSV.
+- Detected button hides gray rows.
 - Scan time on the status bar after a scan.
 - GPT-J / Pygmalion model-file row.
 - MiniCPM 4/5, Hunyuan Hy3/Hy4, and Ling 3.0 model-file rows.
-- September 2026 filename aliases for Qwen 3.8, DeepSeek V4.1, GLM-5.3, Kimi K3, MiniMax M3.
+- September 2026 filename aliases for Qwen 3.8, DeepSeek V4.1,
+  GLM-5.3, Kimi K3, MiniMax M3.
 
 Changed
-- Notepad reads settings.dat as a file first. Hive load is only used if that parse finds no toggle.
-- Foundry Local version comes from the Apps / WinGet uninstall entry when available.
-- Foundry WinGet search looks only two folders deep for foundry.exe.
-- Ollama and LM Studio Details list models already found loaded in memory.
-- Edge checks OptGuideOnDeviceModel\weights.bin the same way Chrome does.
-- Edge Activated only if a large weights.bin is on disk and On-device AI is not off.
-- Edge How to disable stays visible when Edge is present even if no model file is found.
-- Edge How to disable is Settings only (Sidebar Copilot and On-device AI). No File Explorer path.
-- Log.txt header is "Portable AI Scanner Log" and includes version and Windows.
+- Notepad reads settings.dat as a file first.
+- Foundry Local version comes from the Apps / WinGet uninstall entry
+  when available.
+- Ollama and LM Studio Details list models already found loaded in
+  memory.
+- Edge checks OptGuideOnDeviceModel\weights.bin the same way Chrome
+  does.
+- Edge Activated only if a large weights.bin is on disk and On-device
+  AI is not off.
+- Edge How to disable is Settings only.
+- Log.txt header is Portable AI Scanner Log and includes version and
+  Windows.
 
 Fixed
 - Detected filter no longer throws on -ListView.
-- One CSV export path. The unused tab-separated writer is gone.
+- One CSV export path.
 - Foundry no longer stores a wildcard path as the executable.
-- Scan-LocalModels was missing a closing brace and blocked the wrapper from starting.
+- Scan-LocalModels missing brace that blocked the wrapper.
 - Window controls are created before the form is shown.
-- Model name index is built once per scan. An empty index no longer
-  logs "Model name index size: 0" for every family.
+- Empty model-name index no longer logs size 0 for every family.
 
 ==============================================================================
 1.4.2  (2026-09-14)
 ==============================================================================
 Changed
-- Standalone AI products (Microsoft Copilot, ChatGPT, Claude, Grok, Ollama, Perplexity) no longer use "Installed, optional AI off".
-- Microsoft Copilot is Installed when the app is present. Policy off is Deactivated. Taskbar button state is Details only, not Status.
-- ChatGPT, Claude, Grok, Ollama, and Perplexity already used Installed / Not Installed only.
+- Standalone AI products no longer use Installed, optional AI off.
+- Microsoft Copilot is Installed when the app is present. Policy off
+  is Deactivated. Taskbar button state is Details only.
 
 ==============================================================================
 1.4.1  (2026-09-14)
@@ -203,17 +268,19 @@ Changed
 1.4.0  (2026-09-03)
 ==============================================================================
 Changed
-- Microsoft 365 Copilot is installed only if that Copilot app is present. Office by itself is not enough.
+- Microsoft 365 Copilot is installed only if that Copilot app is
+  present. Office by itself is not enough.
 - Windows On-Device AI is not inferred from Copilot.
 - Local AI Models is installed only when GGUF files exist.
-- Microsoft Copilot is Activated only if the taskbar button is explicitly on.
-- Comet uses Installed, optional AI off if a preferences off switch is found.
+- Microsoft Copilot is Activated only if the taskbar button is
+  explicitly on.
 
 ==============================================================================
 1.3.9  (2026-09-03)
 ==============================================================================
 Changed
-- Log.txt uses FOUND (AI off) when the AI ships with the app or browser but is turned off.
+- Log.txt uses FOUND (AI off) when the AI ships with the app or
+  browser but is turned off.
 
 ==============================================================================
 1.3.8  (2026-09-03)
@@ -239,7 +306,8 @@ Changed
 1.3.5  (2026-09-03)
 ==============================================================================
 Changed
-- Remaining section headers are title case: Browser-based, Microsoft Apps, Other apps.
+- Remaining section headers are title case: Browser-based,
+  Microsoft Apps, Other apps.
 
 Removed
 - Model files header.
@@ -257,158 +325,64 @@ Added
 - List sections: Browser-based, Microsoft Apps, Other apps.
 
 ==============================================================================
-1.3.2  (2026-09-03)
-==============================================================================
-Changed
-- Column "Activated / Status" renamed to Status.
-- Status uses only: Not Installed; None Found on Disk; Deactivated; Installed; Installed, optional AI off; Activated.
-- Longer reasons moved to Details.
-
-==============================================================================
-1.3.0  (2026-09-03)
-==============================================================================
-Added
-- Qwen 3.7-Plus/Flash, 3.8-Max / Flash-Next / 27B, Qwen-VL, Qwen-Image-3.
-- DeepSeek V4-Pro-0813 / V4-Flash-0731 / V4 Flash Vision.
-- Gemma 4 Unified / 12B / 31B, DiffusionGemma, FunctionGemma, TranslateGemma.
-- Phi-4 mini-flash / reasoning-plus.
-- GLM-5.3-Flash / ox-alpha.
-- Mistral Leanstral, Voyage, Medium 3.5, Ministral 3, Devstral 2.
-- gpt-oss-safeguard.
-- Muse Spark 1.3 / Muse Voice.
-- Kimi K3 / K2.7.
-- MiniMax M2.5 / M2.7 / M3 row.
-- Foundry Local host app row.
-
-Removed
-- Photos row and all Photos detection.
-
-==============================================================================
-1.2.2  (2026-08-31)
-==============================================================================
-Changed
-- The list fills as each item is scanned instead of waiting until the end.
-
-==============================================================================
-1.2.1  (2026-08-31)
-==============================================================================
-Changed
-- error_log.txt renamed to Log.txt in the same folder as the script or exe.
-- Log starts at launch and records load steps and load errors.
-- Scan no longer wipes the log; it appends.
-
-==============================================================================
-1.2.0  (2026-08-31)
-==============================================================================
-Changed
-- Photos row is Copilot-like / on-device generative AI only.
-- Face grouping and Photos Legacy organizer features are ignored.
-- Installed = Yes only if modern Photos has generative markers.
-- Disable steps: Text and image generation, Apps > Actions, or uninstall Microsoft Photos.
-
-==============================================================================
-1.1.8  (2026-08-31)
-==============================================================================
-Added
-- Notepad AI state from Group Policy DisableAIFeatures, EnableCopilot, and settings.dat RewriteEnabled.
-- Paint AI state from Paint policy values DisableCocreator, DisableImageCreator, DisableGenerativeFill, DisableGenerativeErase, DisableRemoveBackground.
-- Photos / on-device AI consent from ConsentStore systemAIModels and generativeAI.
-
-==============================================================================
-1.1.7  (2026-08-31)
-==============================================================================
-Added
-- Microsoft 365 Copilot detection and disable steps.
-- Notepad, Paint, and Photos AI/Copilot rows with mouse-only disable steps.
-- Windows Copilot details list every matching Copilot Appx package.
-
-==============================================================================
 1.1.6  (2026-08-31)
 ==============================================================================
 Changed
-- AI Name and How to Disable columns auto-size to the longest header or cell text on startup and after each scan.
+- AI Name and How to Disable columns auto-size to the longest text.
 
 ==============================================================================
 1.1.5  (2026-08-31)
 ==============================================================================
 Added
-- How to disable text for every item, in simple mouse-only steps.
-- That column is filled only when Installed = Yes.
+- How to disable text for every item. Filled only when Installed is
+  Yes.
 
 ==============================================================================
 1.1.4  (2026-08-31)
 ==============================================================================
 Changed
-- Build one model-name index per scan and reuse it for every family.
-- Cache Get-AppxPackage once per scan.
-- TCP-probe local ports before HTTP model APIs; skip closed ports.
-- Skip Ollama blob hash files. Tags still come from /api/tags and ollama list.
+- One model-name index per scan.
+- Appx list cached once per scan.
+- TCP probe before HTTP model APIs.
 
 ==============================================================================
 1.1.3  (2026-08-31)
 ==============================================================================
 Added
-- Qwen 3.7, 3.8-Flash / Flash-Next, Qwen4 preview, Qwen-Image, QwQ.
-- Llama 3.3, Llama 4 Scout / Maverick / Behemoth.
-- DeepSeek V3.1 / V3.2, V4 Pro/Flash dated builds.
-- Gemma 4 E2B/E4B tags.
-- Phi-4-reasoning / phi-4-mini.
-- GLM 5.3 and 5.3-Flash.
-- Mistral Small 4, Large 3, Medium, Ministral, Magistral, Codestral, Voxtral.
-- gpt-oss 120b tag.
-- Nemotron 3.5 Lightning, 3 Nano / Super / Nano Omni.
-- Muse Spark 1.1 / 1.2 filenames if downloaded.
-- Kimi K2 / K2.6 / K2.7 / K3 family row.
+- Additional Qwen, Llama, DeepSeek, Gemma, Phi, GLM, Mistral,
+  gpt-oss, Nemotron, Muse, and Kimi family names.
 
 ==============================================================================
 1.1.2  (2026-08-31)
 ==============================================================================
 Added
 - Console host is hidden, not minimized.
-- Dev-only (not shipped): Run_AI_Scanner.vbs launched PowerShell hidden.
-- Dev-only (not shipped): Run_AI_Scanner.bat called that VBS file.
 - Main window starts maximized.
 
 ==============================================================================
 1.1.1  (2026-08-31)
 ==============================================================================
 Added
-- Progress bar next to the Scan button.
-- Status text shows Scanning X of Y while each checker runs.
-- UI updates during the scan so the bar and text do not freeze.
+- Progress bar and Scanning X of Y status text.
 
 ==============================================================================
 1.1.0  (2026-08-31)
 ==============================================================================
 Added
-- Version numbering in the app title, footer, log, and dialogs.
-- Version.txt changelog.
-- Windsurf scanner.
-- Ollama /api/tags check for installed model tags.
-- Extra local OpenAI-compatible ports for loaded-model checks.
-- ChatGPT detection for OpenAI.ChatGPT packages, ChatGPT.exe, and .codex.
-- Ollama Program Files install path.
-- Grok desktop exe/data check before reporting web-only.
+- Version numbering, Version.txt, Windsurf, Ollama tags, extra local
+  ports, ChatGPT package/exe detection, Ollama Program Files path,
+  Grok desktop check.
 
 Changed
-- Local model disk scan limited to folders and model-like files.
-- Llama family keywords no longer use a bare llama match.
-- Phi / GLM / Muse Glimmer keywords tightened.
-- Edge Copilot activation requires an explicit Copilot policy or setting.
-- Windows On-Device AI package match no longer uses a broad Phi filter.
-- GitHub Copilot extension match limited to github.copilot.
-- Status text next to Scan is blank until a scan runs.
-- Footer no longer mentions error_log.txt.
-- Google Gemini in Chrome listed under Browsers.
+- Local model disk scan limited to model-like files.
+- Family keywords tightened.
 - App display name is Portable AI Scanner.
-- Installed and Running columns tightened. Version column widened.
-- List order restored to scan-function order.
 
 ==============================================================================
 1.0.1  (2026-08-18)
 ==============================================================================
 Added
-- error_log.txt entries for each positive finding.
+- Log entries for each positive finding.
 
 Changed
 - Local AI Models moved to the bottom of the list.
@@ -419,15 +393,7 @@ Changed
 Added
 - Portable Windows 10/11 scanner with no installer.
 - Windows version in the UI.
-- Scan list with AI Name, Installed, Running, Status, Version, Details, How to disable.
-- Colors: Green = Installed, Blue = Activated, Red = Running in memory, Gray = Not installed.
-- Running = Yes only when an on-device model is loaded in memory.
-- error_log.txt overwritten on each run.
-- Window can be maximized.
-- Major brands: ChatGPT, Claude, Grok, Ollama, Microsoft Copilot, Perplexity.
-- Local model families: DeepSeek, Gemma, GLM, gpt-oss, Llama, Mistral, Muse Glimmer, Nemotron, Phi, Qwen.
-- Browsers: Brave Leo, Chrome Gemini, Edge Copilot, Firefox optional AI, Opera Aria, Perplexity Comet.
-- Other apps: AnythingLLM, ComfyUI, Cursor, GitHub Copilot, GPT4All, Jan, KoboldCPP, llama.cpp, LM Studio, Msty, Open WebUI, text-generation-webui, vLLM, Windows On-Device AI.
-- Chrome On-device AI uses Local State on_device_ai_user_settings_enabled.
-- Firefox prefs.js / user.js AI Controls and browser.ml prefs.
-- How-to-disable column with settings-only steps.
+- Scan list with Installed, Running, Status, Version, Details, How
+  to disable.
+- Colors for installed, activated, running, and not installed.
+- Major brands, local model families, browsers, and other apps.

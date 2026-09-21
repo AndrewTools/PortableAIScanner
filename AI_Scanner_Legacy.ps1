@@ -3,7 +3,7 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.5.8"
+$script:AppVersion = "1.6.0"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
@@ -37,8 +37,6 @@ Version : $($script:AppVersion) (Windows 7 legacy)
 Windows : $win
 Script  : $($MyInvocation.MyCommand.Path)
 Folder  : $script:LogDir
-User    : $env:USERNAME
-Computer: $env:COMPUTERNAME
 PS      : $($PSVersionTable.PSVersion)
 ====================
 
@@ -105,7 +103,7 @@ try {
             [System.Windows.Forms.MessageBox]::Show(
                 "Portable AI Scanner is already running. Close that window before starting it again.",
                 "Portable AI Scanner", "OK", "Information") | Out-Null
-            exit
+            exit 2
         }
     }
 } catch {
@@ -206,17 +204,6 @@ function Test-LocalPortOpen {
     }
 }
 
-function Get-HttpText {
-    param([string]$Url)
-    try {
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "PortableAIScanner")
-        return $wc.DownloadString($Url)
-    } catch {
-        return ""
-    }
-}
-
 function Get-HowToDisable {
     param([string]$Name)
     return "Control Panel > Programs and Features > find $Name > Uninstall."
@@ -248,15 +235,13 @@ function Scan-ByExeOrUninstall {
         $r.DisableHint = Get-HowToDisable $Name
     } else {
         $r.Details = "No executable or Programs and Features entry found"
+        if ($Name -eq "Ollama" -and (Test-Path (Join-Path $env:USERPROFILE ".ollama"))) {
+            $r.Details = "Leftover data folder only: " + (Join-Path $env:USERPROFILE ".ollama")
+        }
     }
 
     $running = $false
     if ($ProcessNames -and (Test-ProcessRunning $ProcessNames)) { $running = $true }
-    if ($Ports) {
-        foreach ($port in $Ports) {
-            if (Test-LocalPortOpen $port) { $running = $true }
-        }
-    }
     if ($running -and $r.Installed) { $r.Running = "Yes" }
     return $r
 }
@@ -289,22 +274,38 @@ $script:ModelNameIndexBuilt = $false
 function Initialize-ModelNameIndex {
     if ($script:ModelNameIndexBuilt) { return }
     $script:ModelNameIndexBuilt = $true
-    $names = @()
-    $seen = @{}
-    foreach ($root in Get-ModelStorageRoots) {
-        if (-not $root) { continue }
-        if (-not (Test-Path $root)) { continue }
-        try {
-            Get-ChildItem -Path $root -Recurse -ErrorAction SilentlyContinue | ForEach-Object {
-                $n = $_.Name
-                if (-not $n) { return }
-                if ($seen.ContainsKey($n)) { return }
-                $seen[$n] = $true
-                $names += $n
+    $script:IndexNames = @()
+    $script:IndexSeen = @{}
+    $script:IndexDeadline = (Get-Date).AddSeconds(8)
+    $script:IndexMax = 20000
+    function Walk-ModelDir {
+        param($dir, $depthLeft)
+        if (@($script:IndexNames).Count -ge $script:IndexMax) { return }
+        if ((Get-Date) -ge $script:IndexDeadline) { return }
+        if (-not $dir) { return }
+        if (-not (Test-Path -LiteralPath $dir)) { return }
+        Get-ChildItem -LiteralPath $dir -ErrorAction SilentlyContinue | ForEach-Object {
+            if (@($script:IndexNames).Count -ge $script:IndexMax) { return }
+            if ((Get-Date) -ge $script:IndexDeadline) { return }
+            if ($_.PSIsContainer) {
+                if ($depthLeft -gt 0) { Walk-ModelDir $_.FullName ($depthLeft - 1) }
+                return
             }
-        } catch {}
+            $n = $_.Name
+            if (-not $n) { return }
+            if ($n -notmatch '\.(gguf|safetensors|ggml|bin|ot)$') { return }
+            if ($n -eq 'weights.bin' -and $_.FullName -notmatch 'OptGuideOnDeviceModel|OptimizationGuide|optimization-guide') { return }
+            if ($script:IndexSeen.ContainsKey($n)) { return }
+            $script:IndexSeen[$n] = $true
+            $script:IndexNames += $n
+        }
     }
-    $script:ModelNameIndex = $names
+    foreach ($root in Get-ModelStorageRoots) {
+        if (@($script:IndexNames).Count -ge $script:IndexMax) { break }
+        if ((Get-Date) -ge $script:IndexDeadline) { break }
+        try { Walk-ModelDir $root 4 } catch {}
+    }
+    $script:ModelNameIndex = @($script:IndexNames)
     Write-Log ("Model name index size: " + @($script:ModelNameIndex).Count)
 }
 
@@ -488,7 +489,7 @@ function Add-Row {
         $item.ForeColor = [System.Drawing.Color]::Gray
     }
     [void]$lv.Items.Add($item)
-    $item.EnsureVisible()
+    if ($lv.Items.Count -eq 1 -or ($lv.Items.Count % 10 -eq 0)) { $item.EnsureVisible() }
     if (-not $SkipStore) { $script:LegacyRows += @{ Kind = "row"; R = $r } }
 }
 
@@ -527,7 +528,7 @@ $btnScan.Add_Click({
             Scan-ByExeOrUninstall -Name "GPT4All" -Exes @(
                 "$env:LOCALAPPDATA\Programs\GPT4All\bin\chat.exe",
                 "$env:LOCALAPPDATA\nomic.ai\GPT4All\bin\chat.exe"
-            ) -UninstallPatterns @("GPT4All*") -ProcessNames @("chat","gpt4all") -Ports @(4891)
+            ) -UninstallPatterns @("GPT4All*") -ProcessNames @("gpt4all") -Ports @(4891)
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "Jan" -Exes @(
@@ -576,12 +577,6 @@ $btnScan.Add_Click({
             Scan-BrowserExe "Mozilla Firefox" @(
                 "${env:ProgramFiles}\Mozilla Firefox\firefox.exe",
                 "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
-            )
-        }},
-        @{ Title = ""; Fn = {
-            Scan-BrowserExe "Internet Explorer" @(
-                "${env:ProgramFiles}\Internet Explorer\iexplore.exe",
-                "${env:ProgramFiles(x86)}\Internet Explorer\iexplore.exe"
             )
         }}
     )
