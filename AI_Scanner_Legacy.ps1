@@ -3,7 +3,7 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.6.0"
+$script:AppVersion = "1.6.2"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
@@ -185,23 +185,6 @@ function Test-ProcessRunning {
         if ($proc) { return $true }
     }
     return $false
-}
-
-function Test-LocalPortOpen {
-    param([int]$Port)
-    $client = $null
-    try {
-        $client = New-Object System.Net.Sockets.TcpClient
-        $iar = $client.BeginConnect("127.0.0.1", $Port, $null, $null)
-        $ok = $iar.AsyncWaitHandle.WaitOne(200, $false)
-        if (-not $ok) { return $false }
-        $client.EndConnect($iar)
-        return $true
-    } catch {
-        return $false
-    } finally {
-        if ($client) { try { $client.Close() } catch {} }
-    }
 }
 
 function Get-HowToDisable {

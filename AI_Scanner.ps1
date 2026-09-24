@@ -36,7 +36,7 @@
 # 1.5.0 - Export list, Detected filter, Notepad settings.dat file-read first
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.6.0"
+$script:AppVersion = "1.6.2"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -315,6 +315,27 @@ function Read-NotepadSettingsDatFile {
     return $null
 }
 
+function Test-LocalAiPortAllowed {
+    param([int]$Port)
+    switch ($Port) {
+        11434 {
+            return (Test-PathAny @(
+                "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe",
+                "${env:ProgramFiles}\Ollama\ollama.exe"
+            )) -or (Test-Path "$env:USERPROFILE\.ollama")
+        }
+        1234 { return [bool](Test-PathAny @("$env:LOCALAPPDATA\Programs\LM Studio\LM Studio.exe", "$env:LOCALAPPDATA\LM-Studio\LM Studio.exe")) }
+        4891 { return [bool](Test-PathAny @("$env:LOCALAPPDATA\Programs\LM Studio\LM Studio.exe", "$env:LOCALAPPDATA\LM-Studio\LM Studio.exe")) }
+        3080 { return [bool](Test-PathAny @("$env:USERPROFILE\LibreChat", "$env:USERPROFILE\librechat", "$env:LOCALAPPDATA\LibreChat", "$env:USERPROFILE\.librechat")) }
+        8080 { return (Test-CachedProcessName "llama-server") -or (Test-CachedProcessName "koboldcpp") }
+        5000 { return (Test-CachedProcessName "llama-server") -or (Test-CachedProcessName "koboldcpp") }
+        5001 { return (Test-CachedProcessName "llama-server") -or (Test-CachedProcessName "koboldcpp") }
+        3000 { return (Test-CachedProcessName "llama-server") }
+        1337 { return (Test-CachedProcessName "koboldcpp") }
+        default { return $false }
+    }
+}
+
 function Get-NotepadRewriteSetting {
     # User toggle lives in Notepad's settings.dat (RewriteEnabled 0/1)
     $pkgRoot = "$env:LOCALAPPDATA\Packages"
@@ -329,18 +350,22 @@ function Get-NotepadRewriteSetting {
     $fromFile = Read-NotepadSettingsDatFile -Path $hive
     if ($fromFile) { return $fromFile }
 
-    $tmp = Join-Path $env:TEMP ("pas_notepad_settings_{0}.dat" -f [guid]::NewGuid().ToString("N"))
-    $mount = "HKU\PASNotepadScan"
+    $id = [guid]::NewGuid().ToString("N").Substring(0, 8)
+    $tmp = Join-Path $env:TEMP ("pas_notepad_settings_{0}.dat" -f $id)
+    $key = "PASNotepadScan$id"
+    $mount = "HKU\$key"
+    $loaded = $false
     try {
         Copy-Item -Path $hive -Destination $tmp -Force -ErrorAction Stop
         $null = & reg.exe load $mount $tmp 2>$null
         if ($LASTEXITCODE -ne 0) { return $null }
+        $loaded = $true
         $roots = @(
-            "Registry::HKEY_USERS\PASNotepadScan",
-            "Registry::HKEY_USERS\PASNotepadScan\LocalState"
+            "Registry::HKEY_USERS\$key",
+            "Registry::HKEY_USERS\$key\LocalState"
         )
         try {
-            $roots += @(Get-ChildItem "Registry::HKEY_USERS\PASNotepadScan" -ErrorAction SilentlyContinue | ForEach-Object { $_.PSPath })
+            $roots += @(Get-ChildItem "Registry::HKEY_USERS\$key" -ErrorAction SilentlyContinue | ForEach-Object { $_.PSPath })
         } catch {}
         foreach ($rp in $roots) {
             foreach ($valName in @("RewriteEnabled", "CopilotEnabled", "AIFeaturesEnabled", "EnableCopilot", "WritingToolsEnabled", "EnableWritingTools", "WritingTools")) {
@@ -353,7 +378,12 @@ function Get-NotepadRewriteSetting {
     } catch {
         Write-ErrorLog "Notepad settings.dat hive read failed" -ErrorRecord $_
     } finally {
-        try { $null = & reg.exe unload $mount 2>$null } catch {}
+        if ($loaded) {
+            $null = & reg.exe unload $mount 2>$null
+            if ($LASTEXITCODE -ne 0) {
+                Write-ErrorLog "Notepad settings hive unload failed ($mount). Reboot if the temp file stays locked."
+            }
+        }
         Remove-Item $tmp -Force -ErrorAction SilentlyContinue
     }
     return $null
@@ -433,12 +463,14 @@ function Get-HowToDisable {
         "Microsoft 365 Copilot*" { return "$apps > Microsoft 365 Copilot > Uninstall. In Word, Excel, or PowerPoint: File > Options > Copilot > turn off Enable Copilot." }
         "Notepad*" { return "Open Notepad > gear icon (Settings) > AI Features > turn off Copilot / Writing tools." }
         "Paint*" { return "Windows Settings > Privacy & security > Text and image generation > turn off Paint if listed. Paint itself has no simple off switch for every AI tool." }
-        "Google Gemini (in Chrome)" { return "Open Chrome > three-dot menu > Settings > System > turn off On-device AI." }
+        "Google Chrome + Gemini*" { return "Open Chrome > three-dot menu > Settings > System > turn off On-device AI." }
         "ChatGPT*" { return "$apps > ChatGPT > Uninstall." }
         "Google Gemini (Desktop)*" { return "$apps > Gemini > Uninstall." }
         "Claude Code*" { return "$apps > Claude Code if listed > Uninstall. Or delete claude.exe under your user .local\bin folder." }
         "Claude*" { return "$apps > Claude > Uninstall." }
         "Cherry Studio*" { return "$apps > Cherry Studio > Uninstall." }
+        "NVIDIA ChatRTX*" { return "$apps > ChatRTX or NVIDIA ChatRTX > Uninstall." }
+        "NVIDIA G-Assist*" { return "Open the NVIDIA App > Discover > G-Assist > Uninstall. Or $apps > NVIDIA App > Modify and remove G-Assist." }
         "LibreChat*" { return "If LibreChat appears in $apps, click Uninstall. If you use Docker Desktop, open Docker Desktop and stop or delete the LibreChat container." }
         "Perplexity" { return "$apps > Perplexity > Uninstall." }
         "Microsoft Edge*" { return "Open Edge > three-dot menu > Settings > Sidebar > turn off Copilot. Then Settings > System > turn off On-device AI if it is listed. Close Edge fully." }
@@ -488,8 +520,8 @@ function Get-HowToDisable {
     }
 }
 
-# Running = Yes ONLY when an on-device model is actively loaded in memory.
-# Browsers, host apps, and idle servers do NOT count as Running.
+# Running = Yes whenever the browser or app process is open.
+# Red only if Running = Yes and Status is Activated or Model loaded.
 
 function Get-OllamaLoadedModels {
     # Returns model names currently loaded in Ollama memory (CLI + API). Empty array = none loaded.
@@ -497,7 +529,7 @@ function Get-OllamaLoadedModels {
 
     # 1) Preferred: HTTP API /api/ps (works even if CLI not on PATH)
     try {
-        if (Test-LocalPortOpen -Port 11434) {
+        if ((Test-LocalAiPortAllowed 11434) -and (Test-LocalPortOpen -Port 11434)) {
         foreach ($uri in @("http://127.0.0.1:11434/api/ps")) {
             try {
                 $resp = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
@@ -553,7 +585,7 @@ function Get-OllamaLoadedModels {
 function Get-OllamaInstalledTags {
     # Installed (on-disk) Ollama tags via API, not loaded-in-memory
     $tags = @()
-    if (-not (Test-LocalPortOpen -Port 11434)) { return $tags }
+    if (-not ((Test-LocalAiPortAllowed 11434) -and (Test-LocalPortOpen -Port 11434))) { return $tags }
     foreach ($uri in @("http://127.0.0.1:11434/api/tags")) {
         try {
             $resp = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
@@ -577,11 +609,11 @@ function Get-LmStudioLoadedModels {
     # Query LM Studio (and compatible) local OpenAI-style APIs for loaded/served models
     $ids = @()
     $uris = @()
-    if (Test-LocalPortOpen -Port 1234) {
+    if ((Test-LocalAiPortAllowed 1234) -and (Test-LocalPortOpen -Port 1234)) {
         $uris += "http://127.0.0.1:1234/v1/models"
         $uris += "http://127.0.0.1:1234/api/v0/models"
     }
-    if (Test-LocalPortOpen -Port 4891) {
+    if ((Test-LocalAiPortAllowed 4891) -and (Test-LocalPortOpen -Port 4891)) {
         $uris += "http://127.0.0.1:4891/v1/models"
     }
     foreach ($uri in $uris) {
@@ -617,7 +649,7 @@ function Get-OpenAiCompatLoadedModels {
     }
     $uris = @()
     foreach ($p in $portMap.Keys) {
-        if (Test-LocalPortOpen -Port $p) { $uris += $portMap[$p] }
+        if ((Test-LocalAiPortAllowed $p) -and (Test-LocalPortOpen -Port $p)) { $uris += $portMap[$p] }
     }
     foreach ($uri in $uris) {
         try {
@@ -679,7 +711,7 @@ function Test-ProductProcessOpen {
     param([string]$Name)
     if (-not $Name) { return $false }
     # Browsers: do not treat the host browser exe as this AI row running
-    if ($Name -like "Google Gemini (in Chrome)*") { return $false }
+    if ($Name -like "Google Chrome + Gemini*") { return $false }
     if ($Name -like "Microsoft Edge*") { return $false }
     if ($Name -like "Mozilla Firefox*") { return $false }
     if ($Name -like "Opera*") { return $false }
@@ -704,6 +736,9 @@ function Test-ProductProcessOpen {
         "Jan*" { $patterns = @("Jan") }
         "Cherry Studio*" { $patterns = @("Cherry Studio") }
         "LibreChat*" { $patterns = @() }
+        "NVIDIA ChatRTX*" { $patterns = @("ChatRTX") }
+        "NVIDIA G-Assist*" { $patterns = @() }
+        "Nemotron*" { $patterns = @() }
         "Cursor*" { $patterns = @("Cursor") }
         "Windsurf*" { $patterns = @("Windsurf") }
         "Msty*" { $patterns = @("Msty") }
@@ -746,7 +781,7 @@ function Test-BrowserProcessOpen {
     param([string]$Name)
     $procName = $null
     switch -Wildcard ($Name) {
-        "Google Gemini (in Chrome)*" { $procName = "chrome" }
+        "Google Chrome + Gemini*" { $procName = "chrome" }
         "Microsoft Edge*" { $procName = "msedge" }
         "Mozilla Firefox*" { $procName = "firefox" }
         "Brave*" { $procName = "brave" }
@@ -766,21 +801,13 @@ function Set-RunningAndStatus {
     param($Result, [string]$ModelRunning)
     if (-not $Result) { return $Result }
     $st = [string]$Result.Activated
-    $keepOff = @("Deactivated", "Unknown", "Not Installed", "None Found on Disk", "Not Detected", "None Detected")
+    $keepOff = @("Deactivated", "Unknown", "Not Installed", "None Found on Disk", "Not Detected", "None Detected", "No AI Features")
 
     if ((Test-IsBrowserAiRow $Result.Name) -or (Test-IsHostOptionalAiRow $Result.Name)) {
-        $aiOn = ($st -eq "Activated" -or $st -eq "Model loaded" -or $st -eq "App running")
         $browserOpen = $false
         if ($Result.Installed) { $browserOpen = Test-BrowserProcessOpen $Result.Name }
-        if ($aiOn -and $browserOpen) {
-            $Result.Running = "Yes"
-            $Result.Activated = "App running"
-        } elseif ($aiOn) {
-            $Result.Running = "No"
-            $Result.Activated = "Activated"
-        } else {
-            $Result.Running = "No"
-        }
+        $Result.Running = $(if ($browserOpen) { "Yes" } else { "No" })
+
         return $Result
     }
 
@@ -794,7 +821,7 @@ function Set-RunningAndStatus {
         if ($keepOff -notcontains $st) { $Result.Activated = "Model loaded" }
     } elseif ($procYes) {
         $Result.Running = "Yes"
-        if ($keepOff -notcontains $st) { $Result.Activated = "App running" }
+        if ($st -eq "App running") { $Result.Activated = "Installed" }
     } else {
         $Result.Running = "No"
         if ($Result.Installed -and ($st -eq "App running" -or $st -eq "Model loaded")) {
@@ -805,26 +832,6 @@ function Set-RunningAndStatus {
 }
 
 
-function Test-BrowserHostOpen {
-    param([string]$Name)
-    $names = @()
-    switch -Wildcard ($Name) {
-        "Google Gemini (in Chrome)*" { $names = @("chrome") }
-        "Microsoft Edge*" { $names = @("msedge") }
-        "Mozilla Firefox*" { $names = @("firefox") }
-        "Brave Browser*" { $names = @("brave") }
-        "Opera Browser*" { $names = @("opera") }
-        "Perplexity Comet*" { $names = @("comet") }
-        default { return $false }
-    }
-    foreach ($n in $names) {
-        try {
-            if (Test-CachedProcessName $n) { return $true }
-        } catch {}
-    }
-    return $false
-}
-
 function Test-IsHostOptionalAiRow {
     param([string]$Name)
     return ($Name -like "Notepad*" -or $Name -like "Paint*" -or $Name -like "Windows On-Device*" -or $Name -eq "Microsoft Copilot" -or $Name -like "Microsoft 365 Copilot*")
@@ -832,7 +839,7 @@ function Test-IsHostOptionalAiRow {
 
 function Test-IsBrowserAiRow {
     param([string]$Name)
-    return ($Name -like "Google Gemini (in Chrome)*" -or $Name -like "Microsoft Edge*" -or $Name -like "Mozilla Firefox*" -or $Name -like "Brave Browser*" -or $Name -like "Opera Browser*" -or $Name -like "Perplexity Comet*")
+    return ($Name -like "Google Chrome + Gemini*" -or $Name -like "Microsoft Edge*" -or $Name -like "Mozilla Firefox*" -or $Name -like "Brave + Leo*" -or $Name -like "Opera + Aria*" -or $Name -like "Perplexity Comet*")
 }
 
 function Test-IsRunning {
@@ -913,7 +920,12 @@ function Test-IsRunning {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -Patterns @('(?i)gpt-?j', '(?i)gptj', '(?i)pygmalion')))
         }
         "Nemotron*" {
-            return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -Patterns @('(?i)nemotron')))
+            return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -Patterns @(
+                '(?i)nvidia-?nemotron',
+                '(?i)llama-3\.[13]-nemotron',
+                '(?i)nemotron-?[0-9]',
+                '(?i)nemotron-(mini|nano|super|ultra|lightning)'
+            )))
         }
         "Muse *" {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -Patterns @('(?i)muse-?glimmer', '(?i)muse_glimmer', '(?i)museglimmer', '(?i)muse-?spark', '(?i)spark-1\.[123]')))
@@ -1175,7 +1187,7 @@ function Scan-PaintAI {
 
 function Scan-GeminiChrome {
     # Chrome: Gemini Nano cutoff 126. Settings > System > On-device AI.
-    $r = New-Result "Google Gemini (in Chrome)"
+    $r = New-Result "Google Chrome + Gemini"
     $r.DisableHint = "Chrome Settings > System > turn off On-device AI."
 
     $chromeExe = Test-PathAny @(
@@ -1195,9 +1207,8 @@ function Scan-GeminiChrome {
     $chMajor = 0
     if ($r.Version -match "^(\d+)") { $chMajor = [int]$Matches[1] }
     if ($chMajor -gt 0 -and $chMajor -lt 126) {
-        $r.Installed = $false
         $r.DisableHint = ""
-        Set-ScanStatus $r "None Found on Disk" "Chrome $chMajor present; no Gemini Nano on this version"
+        Set-ScanStatus $r "No AI Features" "Chrome $chMajor present; no Gemini on this version"
         return $r
     }
 
@@ -1207,6 +1218,7 @@ function Scan-GeminiChrome {
     $userDisabled = $false
     $policyDisabled = $false
     $settingsEnabled = $null  # $true / $false / $null unknown
+    $localStateRead = $false
 
     # --- Policy disable (strongest) ---
     foreach ($p in @(
@@ -1234,6 +1246,7 @@ function Scan-GeminiChrome {
     if (Test-Path $localState) {
         try {
             $content = Get-Content $localState -Raw -ErrorAction Stop
+            $localStateRead = $true
 
             # Explicit user setting for On-device AI toggle
             if ($content -match '"on_device_ai_user_settings_enabled"\s*:\s*false') {
@@ -1291,12 +1304,14 @@ function Scan-GeminiChrome {
         Set-ScanStatus $r "Deactivated" "Blocked by policy"
         if ($weightsPresent) {
             $r.Details += " | Residual model files may remain until Chrome cleans up"
+            $r.DisableHint = ""
         }
     } elseif ($userDisabled -or $settingsEnabled -eq $false) {
         Set-ScanStatus $r "Deactivated" "On-device AI off in Settings"
         if ($weightsPresent) {
             Set-ScanStatus $r "Deactivated" "Setting OFF; residual weights still on disk"
-            $r.Details += " | Close Chrome fully; if weights remain, delete OptGuideOnDeviceModel"
+            $r.Details += " | Close Chrome fully; residual OptGuide files may remain"
+            $r.DisableHint = ""
         } elseif ($folderPresent) {
             $r.Details += " | Empty or partial model folder leftover"
         }
@@ -1305,11 +1320,13 @@ function Scan-GeminiChrome {
         Set-ScanStatus $r "Activated" "On-device model on disk"
     } elseif ($settingsEnabled -eq $true -and -not $weightsPresent) {
         Set-ScanStatus $r "Activated" "Enabled in Settings; model not downloaded yet"
-    } elseif ($folderPresent) {
-        Set-ScanStatus $r "Deactivated" "Model folder only; not treated as active"
+    } elseif (-not $localStateRead) {
+        $r.DisableHint = ""
+        Set-ScanStatus $r "Unknown" "Could not read Chrome Local State"
     } else {
-        $r.Installed = $false
-        Set-ScanStatus $r "None Found on Disk" "Chrome present; no on-device Gemini model"
+        $r.DisableHint = ""
+        Set-ScanStatus $r "Deactivated" "On-device AI not enabled (no on setting, no large model)"
+        if ($folderPresent) { $r.Details += " | Leftover OptGuide folder only" }
     }
 
     if ($signals.Count -gt 0) {
@@ -1632,6 +1649,85 @@ function Scan-CherryStudio {
     return $r
 }
 
+
+function Scan-ChatRTX {
+    $r = New-Result "NVIDIA ChatRTX"
+    $r.DisableHint = "Windows Settings > Apps > Installed apps > ChatRTX or NVIDIA ChatRTX > Uninstall."
+    $exe = Test-PathAny @(
+        "$env:LOCALAPPDATA\NVIDIA\ChatRTX\ChatRTX.exe",
+        "$env:LOCALAPPDATA\NVIDIA\ChatWithRTX\ChatRTX.exe",
+        "${env:ProgramFiles}\NVIDIA Corporation\ChatRTX\ChatRTX.exe",
+        "${env:ProgramFiles}\NVIDIA ChatRTX\ChatRTX.exe"
+    )
+    if ($exe -and ([string]$exe).Contains("*")) { $exe = $null }
+    $models = Test-PathAny @(
+        "$env:LOCALAPPDATA\NVIDIA\ChatRTX",
+        "$env:LOCALAPPDATA\NVIDIA\ChatWithRTX",
+        "$env:LOCALAPPDATA\NVIDIA\RAG"
+    )
+    $un = $null
+    try { $un = Get-UninstallApps @("ChatRTX*", "NVIDIA ChatRTX*", "Chat with RTX*") } catch {}
+    if ($exe -or $un) {
+        $r.Installed = $true
+        if ($exe) {
+            $r.Details = "Executable: $exe"
+            $r.Version = Get-FileVersionSafe $exe
+        } elseif ($un) {
+            $r.Details = "Uninstall entry: $($un[0].DisplayName)"
+            if ($un[0].DisplayVersion) { $r.Version = $un[0].DisplayVersion }
+        }
+        if ($models) { $r.Details += " | Model/data folder: $models" }
+        else { $r.Details += " | No bundled model folder in default NVIDIA paths" }
+        Set-ScanStatus $r "Installed"
+    } elseif ($models) {
+        $r.Installed = $false
+        $r.Details = "Leftover data folder; no exe: $models"
+        Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
+        $r.DisableHint = ""
+    } else {
+        Set-ScanStatus $r "Not Installed"
+        $r.Details = "No ChatRTX executable or uninstall entry found"
+        $r.DisableHint = ""
+    }
+    return $r
+}
+
+function Scan-GAssist {
+    $r = New-Result "NVIDIA G-Assist"
+    $r.DisableHint = "Open the NVIDIA App > Discover > G-Assist > Uninstall."
+    $pkg = Test-PathAny @(
+        "$env:PROGRAMDATA\NVIDIA Corporation\nvtopps\rise",
+        "$env:PROGRAMDATA\NVIDIA Corporation\NVIDIA Overlay\G-Assist",
+        "$env:LOCALAPPDATA\NVIDIA Corporation\NVIDIA Overlay\G-Assist"
+    )
+    $hit = $null
+    if (Test-Path "$env:PROGRAMDATA\NVIDIA Corporation") {
+        $hit = Get-ChildItem "$env:PROGRAMDATA\NVIDIA Corporation" -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '(?i)g-?assist|nvtopps|rise' } |
+            Select-Object -First 1
+        if ($hit) { $pkg = $hit.FullName }
+    }
+    $un = $null
+    try { $un = Get-UninstallApps @("G-Assist*", "NVIDIA G-Assist*", "Project G-Assist*") } catch {}
+    $nvidiaApp = $false
+    try {
+        $na = Get-UninstallApps @("NVIDIA App*")
+        if ($na) { $nvidiaApp = $true }
+    } catch {}
+    if ($pkg -or $un) {
+        $r.Installed = $true
+        $r.Details = if ($pkg) { "Package: $pkg" } else { "Uninstall entry: $($un[0].DisplayName)" }
+        if ($un -and $un[0].DisplayVersion) { $r.Version = $un[0].DisplayVersion }
+        if ($nvidiaApp) { $r.Details += " | NVIDIA App present" }
+        Set-ScanStatus $r "Installed"
+    } else {
+        Set-ScanStatus $r "Not Installed"
+        $r.Details = if ($nvidiaApp) { "NVIDIA App present; no G-Assist package" } else { "No G-Assist package or uninstall entry found" }
+        $r.DisableHint = ""
+    }
+    return $r
+}
+
 function Scan-LibreChat {
     $r = New-Result "LibreChat"
     $r.DisableHint = "If LibreChat appears in Windows Settings > Apps, click Uninstall. If you use Docker Desktop, open Docker Desktop and stop or delete the LibreChat container."
@@ -1642,7 +1738,7 @@ function Scan-LibreChat {
         "$env:USERPROFILE\.librechat"
     )
     $portOpen = $false
-    try { $portOpen = Test-LocalPortOpen 3080 } catch {}
+    try { $portOpen = ((Test-LocalAiPortAllowed 3080) -and (Test-LocalPortOpen 3080)) } catch {}
     if ($folder) {
         $r.Installed = $true
         $r.Details = "Folder: $folder"
@@ -1683,7 +1779,7 @@ function Scan-Perplexity {
 
 function Scan-EdgeCopilot {
     # Edge: Copilot sidebar + OptGuide weights. First version 112.
-    $r = New-Result "Microsoft Edge + Copilot / AI"
+    $r = New-Result "Microsoft Edge + Copilot"
     $r.DisableHint = "Edge Settings > Sidebar > turn off Copilot. Settings > System > turn off On-device AI."
     $edge = Test-PathAny @(
         "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
@@ -1700,9 +1796,8 @@ function Scan-EdgeCopilot {
     $edMajor = 0
     if ($r.Version -match '^(\d+)') { $edMajor = [int]$Matches[1] }
     if ($edMajor -gt 0 -and $edMajor -lt 112) {
-        $r.Installed = $false
         $r.DisableHint = ""
-        Set-ScanStatus $r "None Found on Disk" "Edge $edMajor present; no Copilot / on-device AI on this version"
+        Set-ScanStatus $r "No AI Features" "Edge $edMajor present; no Copilot on this version"
         return $r
     }
 
@@ -1821,8 +1916,7 @@ function Scan-EdgeCopilot {
         $r.Installed = $true
         Set-ScanStatus $r "Deactivated" "Sidebar or on-device AI turned off; no weights.bin"
     } else {
-        $r.Installed = $false
-        Set-ScanStatus $r "None Found on Disk" "Edge present; no on-device model and sidebar not enabled"
+        Set-ScanStatus $r "Deactivated" "Edge present; Copilot / on-device AI not enabled"
     }
     $sideTxt = "unknown"
     if ($sidebarOn) { $sideTxt = "on" }
@@ -2164,7 +2258,7 @@ function Scan-ComfyUI {
 
 function Scan-OperaAI {
     # Opera: Aria cutoff 100. Settings > Sidebar.
-    $r = New-Result "Opera Browser (Aria / Opera AI)"
+    $r = New-Result "Opera + Aria"
     $r.DisableHint = "Opera Settings > Sidebar > turn off Aria / Opera AI."
     $exe = Test-PathAny @(
         "$env:LOCALAPPDATA\Programs\Opera\opera.exe",
@@ -2193,9 +2287,8 @@ function Scan-OperaAI {
     $opMajor = 0
     if ($r.Version -match "^(\d+)") { $opMajor = [int]$Matches[1] }
     if ($opMajor -gt 0 -and $opMajor -lt 100) {
-        $r.Installed = $false
         $r.DisableHint = ""
-        Set-ScanStatus $r "None Found on Disk" "Opera $opMajor present; no Aria on this version"
+        Set-ScanStatus $r "No AI Features" "Opera $opMajor present; no Aria on this version"
         return $r
     }
     Set-ScanStatus $r "Unknown" "AI setting unknown"
@@ -2222,7 +2315,7 @@ function Scan-OperaAI {
 
 function Scan-BraveLeo {
     # Brave: Leo from 1.52 or Chromium 112. Settings > Leo.
-    $r = New-Result "Brave Browser (Leo AI)"
+    $r = New-Result "Brave + Leo"
     $r.DisableHint = "Brave Settings > Leo > turn off Leo AI."
     $exe = Test-PathAny @(
         "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\Application\brave.exe",
@@ -2231,7 +2324,7 @@ function Scan-BraveLeo {
     )
     if (-not $exe) {
         Set-ScanStatus $r "Not Installed"
-        $r.Details = "Brave Browser not found"
+        $r.Details = "Brave not found"
         return $r
     }
 
@@ -2250,9 +2343,8 @@ function Scan-BraveLeo {
     if ($brMajor -eq 1 -and $brMinor -ge 52) { $brHasLeo = $true }
     elseif ($brMajor -ge 112) { $brHasLeo = $true }
     if ($brMajor -gt 0 -and -not $brHasLeo) {
-        $r.Installed = $false
         $r.DisableHint = ""
-        Set-ScanStatus $r "None Found on Disk" "Brave $brMajor present; no Leo AI on this version"
+        Set-ScanStatus $r "No AI Features" "Brave $brMajor present; no Leo on this version"
         return $r
     }
     Set-ScanStatus $r "Unknown" "AI setting unknown"
@@ -2296,7 +2388,7 @@ function Scan-BraveLeo {
 
 function Scan-Comet {
     # Comet: AI-native browser. Treat install as the product.
-    $r = New-Result "Perplexity Comet Browser"
+    $r = New-Result "Perplexity Comet + AI"
     $r.DisableHint = "Comet Settings > turn off AI features (or uninstall Comet from Windows Settings > Apps)."
     $exe = Test-PathAny @(
         "$env:LOCALAPPDATA\Perplexity\Comet\Application\comet.exe",
@@ -2335,7 +2427,7 @@ function Scan-Comet {
 
 function Scan-Firefox {
     # Firefox: Labs 130-135, General Browsing 136-147, AI Controls 148+.
-    $r = New-Result "Mozilla Firefox (optional AI features)"
+    $r = New-Result "Mozilla Firefox + AI"
     $r.DisableHint = "Firefox Settings > AI Controls > turn on Block AI enhancements."
     $exe = Test-PathAny @(
         "${env:ProgramFiles}\Mozilla Firefox\firefox.exe",
@@ -2405,9 +2497,8 @@ function Scan-Firefox {
     if ($ffMajor -gt 0) {
         $r.Details += " | Firefox $ffMajor"
         if (-not $ffHasAiBundle) {
-            $r.Installed = $false
             $r.DisableHint = ""
-            Set-ScanStatus $r "None Found on Disk" "Firefox $ffMajor present; no bundled generative AI"
+            Set-ScanStatus $r "No AI Features" "Firefox $ffMajor present; no bundled generative AI"
             return $r
         }
         if (-not $ffHasAiControls) {
@@ -2537,9 +2628,8 @@ function Scan-Firefox {
             Set-ScanStatus $r "Deactivated" "Optional AI off (no pref overrides)"
             $r.Details += " | No browser.ml overrides in prefs. Defaults are off"
         } else {
-            $r.Installed = $false
             $r.DisableHint = ""
-            Set-ScanStatus $r "None Found on Disk" "No bundled generative AI"
+            Set-ScanStatus $r "No AI Features" "No bundled generative AI"
         }
     } else {
         if ($ffHasAiControls) {
@@ -2549,7 +2639,7 @@ function Scan-Firefox {
             Set-ScanStatus $r "Unknown" "AI setting unknown"
             $r.Details += " | Could not read profile prefs (Firefox $ffMajor)"
         } else {
-            Set-ScanStatus $r "None Found on Disk" "Could not read prefs; this Firefox version has no bundled AI"
+            Set-ScanStatus $r "No AI Features" "Could not read prefs; this Firefox version has no bundled AI"
             $r.Details += " | Profiles folder missing or empty"
         }
     }
@@ -2627,7 +2717,7 @@ function Scan-Firefox {
     }
 
     $disableParts = @()
-    if ($labsOn -or ($labsFact -eq "unknown" -and $r.Installed -and $r.Activated -ne "None Found on Disk")) {
+    if ($labsOn -or ($labsFact -eq "unknown" -and $r.Installed -and $r.Activated -ne "No AI Features")) {
         if ($ffMajor -ge 148) {
             $disableParts += "Firefox Settings > AI Controls > turn on Block AI enhancements (Labs chatbot)"
         } elseif ($ffMajor -ge 136) {
@@ -3520,10 +3610,21 @@ function Scan-TextGenWebUI {
         "D:\text-generation-webui"
     )
     $found = Test-PathAny $markers
+    $exe = $null
     if ($found) {
+        $hit = Get-ChildItem -Path $found -Depth 2 -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match '(?i)^(python|webui|oobabooga|start).*\.(exe|bat|ps1)$' } |
+            Select-Object -First 1
+        if ($hit) { $exe = $hit.FullName }
+    }
+    if ($exe) {
         $r.Installed = $true
-        $r.Details = "Folder: $found"
+        $r.Details = "Folder: $found | Launcher: $exe"
         Set-ScanStatus $r "Installed" "Install folder present"
+    } elseif ($found) {
+        $r.Installed = $false
+        $r.Details = "Leftover data folder; no exe: $found"
+        Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
     } else {
         Set-ScanStatus $r "Not Installed"
         $r.Details = "No text-generation-webui or oobabooga folder in common locations"
@@ -3612,8 +3713,15 @@ function Add-ResultToListView {
     $item.SubItems.Add( $r.Details ) | Out-Null
     $disableText = ""
     if ($r.Installed) {
-        if ($r.DisableHint) { $disableText = [string]$r.DisableHint }
-        else { $disableText = Get-HowToDisable -Name $r.Name }
+        $stShow = [string]$r.Activated
+        $hideDisable = @("Not Installed", "None Found on Disk", "Not Detected", "None Detected", "No AI Features", "Deactivated")
+        if ($hideDisable -contains $stShow) {
+            $disableText = ""
+        } elseif ($r.DisableHint) {
+            $disableText = [string]$r.DisableHint
+        } else {
+            $disableText = Get-HowToDisable -Name $r.Name
+        }
     }
     $item.SubItems.Add( $disableText ) | Out-Null
 
@@ -3622,28 +3730,16 @@ function Add-ResultToListView {
     $isHostAi = $false
     try { $isBrowser = Test-IsBrowserAiRow $r.Name } catch {}
     try { $isHostAi = Test-IsHostOptionalAiRow $r.Name } catch {}
-    if ($isBrowser -or $isHostAi) {
-        if ($st -eq "App running") {
-            $item.ForeColor = [System.Drawing.Color]::Firebrick
-        } elseif ($st -eq "Activated" -or $st -eq "Model loaded") {
-            $item.ForeColor = [System.Drawing.Color]::DarkBlue
-        } elseif ($st -eq "Installed" -or $st -eq "Deactivated" -or $st -eq "Unknown") {
-            $item.ForeColor = [System.Drawing.Color]::DarkGreen
-        } else {
-            $item.ForeColor = [System.Drawing.Color]::Gray
-        }
+    $runYes = ([string]$r.Running -like "Yes*")
+    $aiHot = ($st -eq "Activated" -or $st -eq "Model loaded")
+    if ($runYes -and $aiHot) {
+        $item.ForeColor = [System.Drawing.Color]::Firebrick
+    } elseif ($aiHot) {
+        $item.ForeColor = [System.Drawing.Color]::DarkBlue
+    } elseif ($st -eq "Installed" -or $st -eq "Deactivated" -or $st -eq "Unknown") {
+        $item.ForeColor = [System.Drawing.Color]::DarkGreen
     } else {
-        if ($st -eq "App running") {
-            $item.ForeColor = [System.Drawing.Color]::DarkBlue
-        } elseif ($st -eq "Activated") {
-            $item.ForeColor = [System.Drawing.Color]::DarkBlue
-        } elseif ($st -eq "Model loaded") {
-            $item.ForeColor = [System.Drawing.Color]::Firebrick
-        } elseif ($st -eq "Installed" -or $st -eq "Deactivated" -or $st -eq "Unknown") {
-            $item.ForeColor = [System.Drawing.Color]::DarkGreen
-        } else {
-            $item.ForeColor = [System.Drawing.Color]::Gray
-        }
+        $item.ForeColor = [System.Drawing.Color]::Gray
     }
     [void]$ListView.Items.Add($item)
     $script:UiEnsureN++
@@ -3657,7 +3753,7 @@ function Test-RowIsDetected {
     if (-not $r) { return $false }
     if ($r.Running -like "Yes*") { return $true }
     $st = [string]$r.Activated
-    return ($st -eq "Installed" -or $st -eq "Deactivated" -or $st -eq "Unknown" -or $st -eq "Activated" -or $st -eq "App running" -or $st -eq "Model loaded")
+    return ($st -eq "Installed" -or $st -eq "Deactivated" -or $st -eq "Unknown" -or $st -eq "Activated" -or $st -eq "Model loaded")
 }
 
 function Update-DetectedButtonStyle {
@@ -3719,7 +3815,8 @@ function Get-GitHubLatestReleaseTag {
         $obj = $json | ConvertFrom-Json
         $tag = [string]$obj.tag_name
         $html = [string]$obj.html_url
-        if (-not $html) { $html = $page }
+        $allow = "https://github.com/$repo/releases/"
+        if (-not $html -or -not $html.StartsWith($allow)) { $html = $page }
         return [PSCustomObject]@{ Tag = $tag; HtmlUrl = $html }
     } catch {
         Write-Log "UPDATE: fetch failed $($_.Exception.Message)"
@@ -3885,7 +3982,7 @@ $btnCancel.Add_Click({
 
 $btnUpdate.Add_Click({
     if ($script:UpdateUrl -and ([string]$btnUpdate.Text -like "* (New)")) {
-        try { if ([string]$script:UpdateUrl -like ("https://github.com/" + $script:GitHubRepo + "/*")) { Start-Process $script:UpdateUrl } } catch {}
+        try { if ([string]$script:UpdateUrl -like ("https://github.com/" + $script:GitHubRepo + "/releases/*")) { Start-Process $script:UpdateUrl } } catch {}
         return
     }
     $btnUpdate.Text = "Checking..."
@@ -3950,7 +4047,6 @@ $btnScan.Add_Click({
     [System.Windows.Forms.Application]::DoEvents()
     try { $script:AllAppx = @(Get-AppxPackage -ErrorAction SilentlyContinue) } catch { $script:AllAppx = @() }
     $script:ModelNameIndex = $null
-    $script:ModelNameIndexBuilt = $false
     $script:ModelGgufCount = 0
     $script:ModelGgufRoots = @()
 
@@ -4067,6 +4163,8 @@ $btnScan.Add_Click({
                 { Scan-LlamaCpp },
                 { Scan-LMStudio },
                 { Scan-Msty },
+                { Scan-ChatRTX },
+                { Scan-GAssist },
                 { Scan-OpenWebUI },
                 { Scan-TextGenWebUI },
                 { Scan-Vllm },
@@ -4236,7 +4334,6 @@ $btnExport.Add_Click({
 
 try {
     Write-Log "LOAD: window ready, opening"
-    $script:GuiReady = $true
     [void]$form.ShowDialog()
     Write-Log "LOAD: window closed normally"
 } catch {

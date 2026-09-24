@@ -9,6 +9,54 @@ How to use this file
 - Keep newest version at the top.
 
 ==============================================================================
+1.6.2  (2026-09-23)
+==============================================================================
+Added
+- NVIDIA ChatRTX row (exe or Apps entry; leftover NVIDIA RAG folder is
+  not Installed).
+- NVIDIA G-Assist row (nvtopps/rise or G-Assist package). NVIDIA App
+  alone is not Installed.
+
+Changed
+- Nemotron Running = Yes only when a loaded host model name looks like
+  Nemotron, not when another NVIDIA process is open.
+- Other Apps list is alphabetical by display name (NVIDIA ChatRTX,
+  NVIDIA G-Assist under N).
+- Browser rows: Google Chrome + Gemini, Microsoft Edge + Copilot,
+  Mozilla Firefox + AI, Opera + Aria, Brave + Leo, Perplexity Comet + AI.
+- Browser Installed is Yes if the browser is on disk. Status is Activated,
+  Deactivated, No AI Features, or Unknown. None Found on Disk is not
+  used on browser rows. How to disable is blank when Deactivated or
+  No AI Features.
+- App running is not a Status. Running = Yes if the browser or app
+  process is open. Red only when Running is Yes and Status is
+  Activated or Model loaded.
+- Chrome with readable Local State, no on-device AI on-key, and no
+  large weights.bin is Deactivated, not Unknown.
+
+==============================================================================
+1.6.1  (2026-09-22)
+==============================================================================
+Added
+- How to disable stays blank when Status is Deactivated, unless leftover
+  model files remain. Then it says Already off and points at Details.
+
+Changed
+- Activated, App running, Model loaded, and Unknown still show disable
+  steps when Installed is Yes.
+- Chrome empty OptGuide folder matches Edge: None Found on Disk, not Installed.
+- How to disable leftover line only for weights.bin / OptGuide files, not Copilot protocol text.
+- text-generation-webui folder without a launcher is Not Installed.
+- Running comment matches App running vs Model loaded colors.
+- Local HTTP to Ollama/LM Studio/llama.cpp ports only if that app looks installed.
+- Check for update only opens /releases/ URLs on this repo.
+- Notepad settings hive uses a unique key and logs a failed unload.
+
+Removed
+- Unused Test-BrowserHostOpen, GuiReady, and main ModelNameIndexBuilt flag.
+- Unused Test-LocalPortOpen from the Windows 7 script.
+
+==============================================================================
 1.6.0  (2026-09-20)
 ==============================================================================
 Added

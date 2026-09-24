@@ -7,7 +7,7 @@ local models on this PC. It does not install anything.
 License: All rights reserved. You may run this app on your own PC.
 You may not modify or republish it.
 
-Current version: 1.6.0
+Current version: 1.6.2
 
 
 Files needed to run
@@ -90,54 +90,49 @@ What you will see
 -----------------
 The window shows the Windows version and the app version.
 
+Installed is Yes if that product is on disk. For browsers, Installed
+is Yes whenever Chrome, Edge, Firefox, Opera, Brave, or Comet is
+installed, even if that build has no AI.
+
 Status words:
 
-  - Installed           On disk, exe closed
-  - Unknown             Browser has AI, on/off setting cannot be read
-  - App running         Desktop exe open with no model, or browser AI
-                        on and that browser is open
+  - Installed           On disk; no separate AI switch
+  - Activated           AI switch on
+  - Deactivated         AI switch off (or Block / policy off)
+  - No AI Features      Browser is installed; this version has no AI
+  - Unknown             AI exists; on/off could not be read
   - Model loaded        A local model is in memory
-  - Activated           AI switch on (browser closed, or host app
-                        with the switch on)
-  - Deactivated         Browser or optional app AI is present and off
   - Not Installed       Product not found
-  - None Found on Disk  Browser is there but that version has no AI
+  - None Found on Disk  Model files / non-browser rows only
 
-Desktop and other apps
-(ChatGPT, Claude, Gemini Desktop, Copilot, Ollama, LM Studio,
-Cherry Studio, Claude Code, Cursor, and similar):
+Running is Yes if that browser or app process is open. AI on or off
+does not change the Running column.
 
-  Notepad, Paint, Windows On-Device AI, Microsoft Copilot, and
-  Microsoft 365 Copilot follow browser colors when they have an
-  AI switch: Blue = Activated. Green = Deactivated.
+Color:
 
-  - Gray    Not Installed
-  - Green   Installed or Deactivated. On disk, AI off or no switch.
-            Running = No
-  - Blue    App running, or Activated (AI switch on).
-            Running = Yes only if the exe is open
-  - Red     Model loaded. Local model in memory. Running = Yes
+  - Red     Running is Yes and Status is Activated or Model loaded
+  - Blue    Status is Activated or Model loaded, process closed
+  - Green   Installed, Deactivated, or Unknown
+  - Gray    Not Installed, None Found on Disk, or No AI Features
 
-Browsers (Chrome Gemini, Edge, Firefox, Brave, Opera):
+Browser row names:
 
-  - Gray    No AI in that version, or browser not installed
-  - Green   Installed, Deactivated, or Unknown. Running = No
-  - Blue    Activated. AI setting on, browser closed. Running = No
-  - Red     App running. AI on and that browser is open. Running = Yes
+  - Google Chrome + Gemini
+  - Microsoft Edge + Copilot
+  - Mozilla Firefox + AI
+  - Opera + Aria
+  - Brave + Leo
+  - Perplexity Comet + AI
+
+Firefox Details still split Labs chatbot, tab AI, and link previews
+by version. Old Firefox is Installed Yes with Status No AI Features.
 
 Official Gemini Desktop is the Google app (Update GUID and
-%LOCALAPPDATA%\Google\Gemini).
+%LOCALAPPDATA%\Google\Gemini). Third-party wrappers are ignored.
+Google has not published the live exe folder.
 
-  - Third-party Gemini Desktop wrappers are ignored.
-  - Google has not published the live exe folder.
-
-Local model files (Qwen, Llama, DeepSeek, Gemma, and similar):
-
-  - Gray    No files on disk
-  - Green   Files on disk, nothing loaded. Running = No
-  - Red     That family is loaded in Ollama, LM Studio, or similar.
-            Running = Yes
-  - Blue    Not used for model-file rows
+Other apps also include NVIDIA ChatRTX and NVIDIA G-Assist.
+NVIDIA App alone is not G-Assist.
 
 After a scan:
 
@@ -148,7 +143,10 @@ After a scan:
 
 How to disable
 --------------
-How to disable appears when Installed is Yes.
+How to disable appears when Installed is Yes and Status is
+Activated or Model loaded.
+
+It is blank when Status is Deactivated or No AI Features.
 
   - Windows 10/11: Settings and the mouse. No file editing.
   - Windows 7:     Control Panel > Programs and Features > Uninstall.
@@ -172,8 +170,7 @@ your browser. It does not need Administrator. It does not add startup
 tasks. Local service checks only contact 127.0.0.1 on this PC.
 
 A scan reads browser settings files and Notepad settings to see if AI
-is on. It does not change those files. Log.txt includes the Windows
-Do not upload Log.txt.
+is on. It does not change those files. Do not upload Log.txt.
 
 What this is not
 ----------------
