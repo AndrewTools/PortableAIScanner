@@ -3,7 +3,7 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.6.6"
+$script:AppVersion = "1.6.7"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
@@ -120,6 +120,7 @@ function New-Result {
     $o | Add-Member NoteProperty Version ""
     $o | Add-Member NoteProperty Running "No"
     $o | Add-Member NoteProperty DisableHint ""
+    $o | Add-Member NoteProperty ProcessNames @()
     return $o
 }
 
@@ -200,6 +201,7 @@ function Scan-ByExeOrUninstall {
         [string[]]$ProcessNames
     )
     $r = New-Result $Name
+    $r.ProcessNames = @($ProcessNames)
     $exe = Test-PathAny $Exes
     $un = @()
     if ($UninstallPatterns) { $un = @(Get-UninstallHits $UninstallPatterns) }
@@ -245,6 +247,8 @@ function Get-ModelStorageRoots {
     if ($env:LOCALAPPDATA) {
         $roots += (Join-Path $env:LOCALAPPDATA "Programs\Ollama")
         $roots += (Join-Path $env:LOCALAPPDATA "nomic.ai\GPT4All")
+        $roots += (Join-Path $env:LOCALAPPDATA "LM-Studio")
+        $roots += (Join-Path $env:LOCALAPPDATA "LM Studio")
     }
     if ($env:OLLAMA_MODELS) { $roots += $env:OLLAMA_MODELS }
     return $roots
@@ -307,6 +311,10 @@ function Find-Family {
             }
         }
     }
+    if (-not $script:ClaimedModelNames) { $script:ClaimedModelNames = @{} }
+    foreach ($n in $hits) {
+        try { $script:ClaimedModelNames[$n] = $true } catch {}
+    }
     if ($hits.Count -gt 0) {
         $sample = ($hits | Select-Object -First 4) -join "; "
         Set-Installed $r "Installed" ("Files or folders: " + $sample) ""
@@ -321,16 +329,21 @@ function Find-Family {
 function Scan-LocalSummary {
     $r = New-Result "Other Local Models"
     Initialize-ModelNameIndex
-    $gguf = 0
+    if (-not $script:ClaimedModelNames) { $script:ClaimedModelNames = @{} }
+    $left = 0
+    $sample = @()
     foreach ($n in @($script:ModelNameIndex)) {
-        if ($n -like "*.gguf") { $gguf++ }
+        if ($n -notmatch "\.(gguf|safetensors|ggml)$") { continue }
+        if ($script:ClaimedModelNames.ContainsKey($n)) { continue }
+        $left++
+        if (@($sample).Count -lt 4) { $sample += $n }
     }
-    if ($gguf -gt 0) {
-        Set-Installed $r "Installed" ("GGUF files: " + $gguf) ""
+    if ($left -gt 0) {
+        Set-Installed $r "Installed" ("Leftover model files: " + $left + " | Sample: " + ($sample -join "; ")) ""
         $r.DisableHint = "Open Ollama, LM Studio, GPT4All, or Jan and remove models. Or uninstall that app from Control Panel."
     } else {
         $r.Activated = "None Found on Disk"
-        $r.Details = "No GGUF files in common model folders"
+        $r.Details = "No leftover GGUF, safetensors, or ggml files in common model folders"
     }
     return $r
 }
@@ -468,7 +481,9 @@ function Add-Row {
     [void]$item.SubItems.Add($hint)
     if ($r.Running -like "Yes*") {
         $item.ForeColor = [System.Drawing.Color]::Firebrick
-    } elseif ($r.Installed) {
+    } elseif ($r.Activated -eq "Activated" -or $r.Activated -eq "Model loaded") {
+        $item.ForeColor = [System.Drawing.Color]::FromArgb(0, 90, 180)
+    } elseif ($r.Installed -or $r.Activated -eq "Deactivated" -or $r.Activated -eq "Unknown") {
         $item.ForeColor = [System.Drawing.Color]::DarkGreen
     } else {
         $item.ForeColor = [System.Drawing.Color]::Gray
@@ -498,21 +513,43 @@ $btnScan.Add_Click({
     $lv.Items.Clear()
     $script:ModelNameIndex = $null
     $script:ModelNameIndexBuilt = $false
+    $script:ClaimedModelNames = @{}
     Write-Log "SCAN: Windows 7 legacy scan started"
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     try {
     $jobs = @(
-        @{ Title = "Local apps"; Fn = {
+        @{ Title = "Major Apps"; Fn = {
             Scan-ByExeOrUninstall -Name "Ollama" -Exes @(
                 "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe",
                 "${env:ProgramFiles}\Ollama\ollama.exe"
             ) -UninstallPatterns @("Ollama*") -ProcessNames @("ollama","ollama app")
         }},
+        @{ Title = "Local Models"; Fn = { Find-Family "Qwen 3 / 4 (Alibaba)" @('(?i)qwen') }},
+        @{ Title = ""; Fn = { Find-Family "Llama 3 / 4 (Meta)" @('(?i)llama-?[234]','(?i)meta-llama') }},
+        @{ Title = ""; Fn = { Find-Family "DeepSeek R1 / V4 (DeepSeek)" @('(?i)deepseek','(?i)r1-distill') }},
+        @{ Title = ""; Fn = { Find-Family "Gemma 3 / 4 (Google)" @('(?i)gemma-?[234]','(?i)gemma[234]','(?i)medgemma') }},
+        @{ Title = ""; Fn = { Find-Family "Phi-4 (Microsoft)" @('(?i)phi-?[34]') }},
+        @{ Title = ""; Fn = { Find-Family "GLM 4.7 / 5 (Zhipu)" @('(?i)glm-?[45]','(?i)chatglm') }},
+        @{ Title = ""; Fn = { Find-Family "Mistral / Mixtral (Mistral)" @('(?i)mistral','(?i)mixtral') }},
+        @{ Title = ""; Fn = { Find-Family "GPT-J / Pygmalion" @('(?i)gpt-?j','(?i)pygmalion') }},
+        @{ Title = ""; Fn = { Find-Family "gpt-oss (OpenAI)" @('(?i)gpt-oss','(?i)gptoss') }},
+        @{ Title = ""; Fn = { Scan-LocalSummary }},
+        @{ Title = "Browser-based"; Fn = {
+            Scan-BrowserExe "Google Chrome + Gemini" @(
+                "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
+                "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe"
+            )
+        }},
         @{ Title = ""; Fn = {
-            Scan-ByExeOrUninstall -Name "LM Studio" -Exes @(
-                "$env:LOCALAPPDATA\Programs\LM Studio\LM Studio.exe",
-                "$env:USERPROFILE\AppData\Local\LM Studio\LM Studio.exe"
-            ) -UninstallPatterns @("LM Studio*") -ProcessNames @("LM Studio")
+            Scan-BrowserExe "Mozilla Firefox + AI" @(
+                "${env:ProgramFiles}\Mozilla Firefox\firefox.exe",
+                "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
+            )
+        }},
+        @{ Title = "Other Apps"; Fn = {
+            Scan-ByExeOrUninstall -Name "AnythingLLM" -Exes @(
+                "$env:LOCALAPPDATA\Programs\AnythingLLM\AnythingLLM.exe"
+            ) -UninstallPatterns @("AnythingLLM*") -ProcessNames @("AnythingLLM")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "GPT4All" -Exes @(
@@ -527,47 +564,28 @@ $btnScan.Add_Click({
             ) -UninstallPatterns @("Jan*") -ProcessNames @("Jan")
         }},
         @{ Title = ""; Fn = {
-            Scan-ByExeOrUninstall -Name "llama.cpp / llama-server" -Exes @(
-                "$env:USERPROFILE\llama.cpp\llama-server.exe",
-                "$env:USERPROFILE\llama.cpp\llama-cli.exe"
-            ) -UninstallPatterns @("llama.cpp*") -ProcessNames @("llama-server","llama-cli")
-        }},
-        @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "KoboldCPP" -Exes @(
                 "$env:USERPROFILE\koboldcpp\koboldcpp.exe"
             ) -UninstallPatterns @("KoboldCPP*","koboldcpp*") -ProcessNames @("koboldcpp")
         }},
         @{ Title = ""; Fn = {
+            Scan-ByExeOrUninstall -Name "llama.cpp" -Exes @(
+                "$env:USERPROFILE\llama.cpp\llama-server.exe",
+                "$env:USERPROFILE\llama.cpp\llama-cli.exe"
+            ) -UninstallPatterns @("llama.cpp*") -ProcessNames @("llama-server","llama-cli")
+        }},
+        @{ Title = ""; Fn = {
+            Scan-ByExeOrUninstall -Name "LM Studio" -Exes @(
+                "$env:LOCALAPPDATA\Programs\LM Studio\LM Studio.exe",
+                "$env:USERPROFILE\AppData\Local\LM Studio\LM Studio.exe",
+                "$env:LOCALAPPDATA\LM-Studio\LM Studio.exe",
+                "$env:LOCALAPPDATA\LM Studio\LM Studio.exe"
+            ) -UninstallPatterns @("LM Studio*") -ProcessNames @("LM Studio")
+        }},
+        @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "Msty" -Exes @(
                 "$env:LOCALAPPDATA\Programs\Msty\Msty.exe"
             ) -UninstallPatterns @("Msty*") -ProcessNames @("Msty")
-        }},
-        @{ Title = ""; Fn = {
-            Scan-ByExeOrUninstall -Name "AnythingLLM" -Exes @(
-                "$env:LOCALAPPDATA\Programs\AnythingLLM\AnythingLLM.exe"
-            ) -UninstallPatterns @("AnythingLLM*") -ProcessNames @("AnythingLLM")
-        }},
-        @{ Title = "Model files"; Fn = { Find-Family "Qwen (Alibaba)" @('(?i)qwen') }},
-        @{ Title = ""; Fn = { Find-Family "Llama (Meta)" @('(?i)llama-?[234]','(?i)meta-llama') }},
-        @{ Title = ""; Fn = { Find-Family "DeepSeek" @('(?i)deepseek','(?i)r1-distill') }},
-        @{ Title = ""; Fn = { Find-Family "Gemma (Google)" @('(?i)gemma-?[234]','(?i)gemma[234]','(?i)medgemma') }},
-        @{ Title = ""; Fn = { Find-Family "Phi (Microsoft)" @('(?i)phi-?[34]') }},
-        @{ Title = ""; Fn = { Find-Family "GLM (Zhipu)" @('(?i)glm-?[45]','(?i)chatglm') }},
-        @{ Title = ""; Fn = { Find-Family "Mistral / Mixtral" @('(?i)mistral','(?i)mixtral') }},
-        @{ Title = ""; Fn = { Find-Family "GPT-J / Pygmalion" @('(?i)gpt-?j','(?i)pygmalion') }},
-        @{ Title = ""; Fn = { Find-Family "gpt-oss" @('(?i)gpt-oss','(?i)gptoss') }},
-        @{ Title = ""; Fn = { Scan-LocalSummary }},
-        @{ Title = "Browsers"; Fn = {
-            Scan-BrowserExe "Google Chrome" @(
-                "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
-                "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe"
-            )
-        }},
-        @{ Title = ""; Fn = {
-            Scan-BrowserExe "Mozilla Firefox" @(
-                "${env:ProgramFiles}\Mozilla Firefox\firefox.exe",
-                "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe"
-            )
         }}
     )
 
@@ -595,6 +613,19 @@ $btnScan.Add_Click({
         }
         [System.Windows.Forms.Application]::DoEvents()
         if ($script:CancelScan) { break }
+    }
+
+    foreach ($row in @($script:LegacyRows)) {
+        if ($row.Kind -ne "row") { continue }
+        $rr = $row.R
+        if ($rr.Installed -and $rr.ProcessNames -and @($rr.ProcessNames).Count -gt 0) {
+            if (Test-ProcessRunning $rr.ProcessNames) { $rr.Running = "Yes" } else { $rr.Running = "No" }
+        }
+    }
+    $lv.Items.Clear()
+    foreach ($row in @($script:LegacyRows)) {
+        if ($row.Kind -eq "section") { Add-Section $row.Title -SkipStore }
+        else { Add-Row $row.R -SkipStore }
     }
 
     $watch.Stop()
@@ -639,16 +670,23 @@ $btnDetected.Add_Click({
     if (-not $script:HasScanResults) { return }
     $script:FilterDetected = -not $script:FilterDetected
     $lv.Items.Clear()
+    $pendingHeader = $null
     foreach ($row in @($script:LegacyRows)) {
         if ($row.Kind -eq "section") {
-            if (-not $script:FilterDetected) { Add-Section $row.Title -SkipStore }
+            $pendingHeader = $row.Title
         } else {
             $r = $row.R
             $keep = $true
             if ($script:FilterDetected) {
                 $keep = $r.Installed -or ($r.Running -like "Yes*")
             }
-            if ($keep) { Add-Row $r -SkipStore }
+            if ($keep) {
+                if ($pendingHeader) {
+                    Add-Section $pendingHeader -SkipStore
+                    $pendingHeader = $null
+                }
+                Add-Row $r -SkipStore
+            }
         }
     }
 })

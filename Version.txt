@@ -4,6 +4,66 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
+1.6.7  (2026-09-26)
+==============================================================================
+Changed
+- Detected and Export stay hidden and disabled until the scan
+  finishes. They are armed again after the Scan click ends.
+- Windows 10/11: percent on the bar, Checking apps... then
+  Checking model files..., then Scanning N of M with the list
+  title. GPU line uses the same dark text. Windows 7 does not
+  get those UI pieces.
+- Windows 7 list groups and row titles match Windows 10/11:
+  Major Apps, Local Models, Browser-based, Other Apps.
+  Chrome and Firefox use the + Gemini / + AI names.
+- Windows 7 Detected keeps a group title when that group
+  still has a row.
+- Copilot and Microsoft 365 Copilot Running is Yes when that
+  app process is open. Windows On-Device AI stays Running No.
+- Other Local Models counts leftover GGUF, safetensors, and
+  ggml names that no family row already claimed. Loaded IDs
+  with no family match still show on that row.
+- llama.cpp Model loaded only if llama-server is open.
+- Hover a row to read Details and How to disable.
+- Text and image generation consent is read once per scan.
+- Uninstall registry is read once per scan.
+- Claude Code Running also matches .local\bin\claude.exe.
+- GitHub Copilot and Windows On-Device AI Details no longer
+  start with a pipe.
+- Grok leftover folder uses the real Packages folder name.
+- Wrapper allows only Windows 7, 10, and 11. RtlGetVersion plus
+  workstation product type. Windows Server is blocked even when
+  the version number is 10.0. Rebuild PortableAIScanner.exe.
+- Name and How to disable widths are measured while rows are
+  added, not with a full-list resize after the last row.
+- Cursor, GPT4All, and Foundry Local use the same Apps-list
+  read as the other rows.
+- README.txt is a short overview only. Details stay here.
+- A very large model folder may not be fully listed.
+- Firefox Details drop repeated phrases.
+- Right-click AI_Scanner.ps1 on Windows Server shows the
+  same not-supported message as the starter.
+- Running is checked again at the end of the scan so an
+  app opened during the scan can show Yes.
+- Windows 7: a row is Red when Running is Yes.
+- llama.cpp Model loaded lists only models from the
+  llama-server port, not KoboldCPP.
+- Windows 7: Running is checked again at the end of the
+  scan. Other Local Models leftover files include
+  safetensors and ggml. LM Studio also looks in
+  %LOCALAPPDATA%\LM-Studio.
+- Windows 7 browser rows no longer pass an empty process name into Get-Process.
+
+Fixed
+- Detected is clickable the first time it appears after a scan.
+- Detected uses Click only. A second event cannot run until
+  the list rebuild finishes.
+- Detected cache add failure rebuilds the list instead of
+  leaving it empty.
+- Detected on/off reuses the scanned rows. Turning it off
+  does not rebuild the list.
+
+==============================================================================
 1.6.6  (2026-09-26)
 ==============================================================================
 Changed

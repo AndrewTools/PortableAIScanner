@@ -7,7 +7,7 @@
 # not a missing function closer. Count braces outside strings.
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.6.6"
+$script:AppVersion = "1.6.7"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -159,6 +159,33 @@ public class NativeConsole {
     Write-Log "LOAD ERROR: hide-console step failed (non-fatal)" -ErrorRecord $_
 }
 Write-Log "LOAD: helpers starting"
+
+function Test-IsWindowsServerSku {
+    try {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        if ([int]$os.ProductType -ne 1) { return $true }
+        if ([string]$os.Caption -match "(?i)Server") { return $true }
+    } catch {
+        try {
+            $os = Get-WmiObject -Class Win32_OperatingSystem -ErrorAction Stop
+            if ([int]$os.ProductType -ne 1) { return $true }
+            if ([string]$os.Caption -match "(?i)Server") { return $true }
+        } catch {}
+    }
+    return $false
+}
+if (Test-IsWindowsServerSku) {
+    Write-Log "LOAD: Windows Server is not supported"
+    try {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Portable AI Scanner runs on Windows 7, 10, and 11 only.`r`nWindows Server is not supported.",
+            "Portable AI Scanner",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+    } catch {}
+    exit 1
+}
 
 $script:InstanceMutex = $null
 try {
@@ -413,6 +440,7 @@ function Get-NotepadRewriteSetting {
 }
 
 function Get-SystemAiConsent {
+    if ($null -ne $script:SystemAiConsentCache) { return $script:SystemAiConsentCache }
     $signals = @()
     $denied = $false
     $allowed = $false
@@ -440,7 +468,8 @@ function Get-SystemAiConsent {
             if ([int]$pol -eq 1) { $allowed = $true }
         } catch {}
     }
-    return [PSCustomObject]@{ Denied = $denied; Allowed = $allowed; Signals = $signals }
+    $script:SystemAiConsentCache = [PSCustomObject]@{ Denied = $denied; Allowed = $allowed; Signals = $signals }
+    return $script:SystemAiConsentCache
 }
 
 function Set-ScanStatus {
@@ -630,6 +659,29 @@ function Get-LmStudioLoadedModels {
     return $ids
 }
 
+function Get-LlamaCppLoadedModels {
+    $ids = @()
+    if (-not (Test-LocalAiPortAllowed 8080)) { return $ids }
+    if (-not (Test-LocalPortOpen -Port 8080)) { return $ids }
+    foreach ($uri in @("http://127.0.0.1:8080/v1/models", "http://127.0.0.1:8080/api/v1/models")) {
+        try {
+            $resp = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 1 -ErrorAction Stop
+            $json = Convert-LocalHttpJson $resp
+            if (-not $json) { continue }
+            if ($json.data) {
+                foreach ($m in $json.data) {
+                    if ($m.id) {
+                        $id = [string]$m.id
+                        if ($ids -notcontains $id) { $ids += $id }
+                    }
+                }
+            }
+            if ($ids.Count -gt 0) { return $ids }
+        } catch { continue }
+    }
+    return $ids
+}
+
 function Get-OpenAiCompatLoadedModels {
     # Generic OpenAI-compatible servers often used with local models (llama.cpp, kobold, etc.)
     $ids = @()
@@ -680,6 +732,69 @@ function Get-LoadedModelsMatching {
         }
     }
     return $matched
+}
+
+function Get-KnownFamilyPatterns {
+    return @(
+        '(?i)qwen',
+        '(?i)meta-llama',
+        '(?i)llama-?[2345]',
+        '(?i)llama[2345]',
+        '(?i)scout',
+        '(?i)maverick',
+        '(?i)deepseek',
+        '(?i)r1-distill',
+        '(?i)r1_distill',
+        '(?i)ds-r1',
+        '(?i)ds-v3',
+        '(?i)ds-v4',
+        '(?i)gemma',
+        '(?i)medgemma',
+        '(?i)functiongemma',
+        '(?i)translategemma',
+        '(?i)phi-?[0-9]',
+        '(?i)phi[345]',
+        '(?i)phi-mini',
+        '(?i)glm',
+        '(?i)chatglm',
+        '(?i)mistral',
+        '(?i)mixtral',
+        '(?i)devstral',
+        '(?i)magistral',
+        '(?i)ministral',
+        '(?i)pixtral',
+        '(?i)voyage',
+        '(?i)gpt-oss',
+        '(?i)gpt_oss',
+        '(?i)gptoss',
+        '(?i)gpt-?j',
+        '(?i)gptj',
+        '(?i)pygmalion',
+        '(?i)nvidia-?nemotron',
+        '(?i)nemotron',
+        '(?i)muse-?glimmer',
+        '(?i)muse-?spark',
+        '(?i)kimi',
+        '(?i)moonshot',
+        '(?i)granite',
+        '(?i)ibm-granite',
+        '(?i)minimax',
+        '(?i)minicpm',
+        '(?i)hunyuan',
+        '(?i)ling-?3',
+        '(?i)inclusionai'
+    )
+}
+
+function Get-UnclaimedLoadedModels {
+    param([string[]]$Loaded)
+    if (-not $Loaded -or $Loaded.Count -eq 0) { return @() }
+    $claimed = Get-LoadedModelsMatching -Loaded $Loaded -Patterns @(Get-KnownFamilyPatterns)
+    $left = @()
+    foreach ($m in $Loaded) {
+        if ($claimed -notcontains $m) { $left += $m }
+    }
+    return $left
 }
 
 
@@ -785,7 +900,7 @@ function Test-ProcessPathMatchesProduct {
         if ($Name -like "Jan*") {
             if ($pp -match '(?i)\\Jan\\' -or $pp -match '(?i)\\jan\\Jan\.exe$') { return $true }
         } elseif ($Name -like "Claude Code*") {
-            if ($pp -match '(?i)\\\.claude\\' -or $pp -match '(?i)Anthropic' -or $pp -match '(?i)Claude Code') { return $true }
+            if ($pp -match '(?i)\\\.claude\\' -or $pp -match '(?i)Anthropic' -or $pp -match '(?i)Claude Code' -or $pp -match '(?i)\\\.local\\bin\\claude\.exe$') { return $true }
         } elseif ($Name -like "Claude*") {
             if ($pp -match '(?i)Anthropic' -or $pp -match '(?i)\\Claude\\') { return $true }
         } elseif ($Name -like "Foundry Local*") {
@@ -821,7 +936,12 @@ function Set-RunningAndStatus {
     param($Result, [string]$ModelRunning)
     if (-not $Result) { return $Result }
     $st = [string]$Result.Activated
-    $keepOff = @("Deactivated", "Unknown", "Not Installed", "None Found on Disk", "Not Detected", "None Detected", "No AI Features")
+    $keepOff = @("Deactivated", "Unknown", "Not Installed", "None Found on Disk", "No AI Features")
+
+    if ($Result.Name -like "Windows On-Device*") {
+        $Result.Running = "No"
+        return $Result
+    }
 
     if ((Test-IsBrowserAiRow $Result.Name) -or (Test-IsHostOptionalAiRow $Result.Name)) {
         $browserOpen = $false
@@ -851,9 +971,26 @@ function Set-RunningAndStatus {
 }
 
 
+
+function Compact-DetailText {
+    param([string]$Text)
+    if (-not $Text) { return $Text }
+    $seen = @{}
+    $out = @()
+    foreach ($part in @($Text -split "\s*\|\s*")) {
+        $trim = ([string]$part).Trim()
+        if (-not $trim) { continue }
+        $key = $trim.ToLower()
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        $out += $trim
+    }
+    return ($out -join " | ")
+}
+
 function Test-IsHostOptionalAiRow {
     param([string]$Name)
-    return ($Name -like "Notepad*" -or $Name -like "Paint*" -or $Name -like "Windows On-Device*" -or $Name -eq "Copilot (Microsoft)" -or $Name -like "Microsoft 365 Copilot*")
+    return ($Name -like "Notepad*" -or $Name -like "Paint*")
 }
 
 function Test-IsBrowserAiRow {
@@ -894,13 +1031,13 @@ function Test-IsRunning {
             return (Format-Yes $LmStudioLoadedModels)
         }
         "llama.cpp*" {
-            $m = Get-LoadedModelsMatching -Loaded $CompatLoadedModels -Patterns @('(?i).')
-            if ($m.Count -gt 0) { return (Format-Yes $m) }
-            # If llama-server process is up but API has no model id, still No (need loaded model)
+            if (-not (Test-ProductProcessOpen "llama.cpp")) { return "No" }
+            $llamaIds = @(Get-LlamaCppLoadedModels)
+            if ($llamaIds.Count -gt 0) { return (Format-Yes $llamaIds) }
             return "No"
         }
         "Other Local Models*" {
-            return (Format-Yes $allLoaded)
+            return (Format-Yes (Get-UnclaimedLoadedModels $allLoaded))
         }
         "Qwen*" {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -Patterns @('(?i)qwen')))
@@ -1702,28 +1839,20 @@ function Scan-CherryStudio {
         $r.Details = "Executable: $exe"
         $r.Version = Get-FileVersionSafe $exe
         Set-ScanStatus $r "Installed"
-    } elseif ($data) {
-        $r.Installed = $false
-        $r.Details = "Leftover data folder only: $data"
-        Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
-        $r.DisableHint = ""
-        $unC = $null
-        try { $unC = Get-UninstallApps @("Cherry Studio*") } catch {}
-        if ($unC) {
-            $r.Installed = $true
-            $r.Details = "Uninstall entry: $($unC[0].DisplayName) | Leftover data: $data"
-            if ($unC[0].DisplayVersion) { $r.Version = $unC[0].DisplayVersion }
-            Set-ScanStatus $r "Installed" "Uninstall registry"
-            $r.DisableHint = "Windows Settings > Apps > Installed apps > Cherry Studio > Uninstall."
-        }
     } else {
         $unC = $null
         try { $unC = Get-UninstallApps @("Cherry Studio*") } catch {}
         if ($unC) {
             $r.Installed = $true
             $r.Details = "Uninstall entry: $($unC[0].DisplayName)"
+            if ($data) { $r.Details += " | Leftover data: $data" }
             if ($unC[0].DisplayVersion) { $r.Version = $unC[0].DisplayVersion }
             Set-ScanStatus $r "Installed" "Uninstall registry"
+        } elseif ($data) {
+            $r.Installed = $false
+            $r.Details = "Leftover data folder only: $data"
+            Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
+            $r.DisableHint = ""
         } else {
             Set-ScanStatus $r "Not Installed"
             $r.Details = "No Cherry Studio executable, data folder, or uninstall entry found"
@@ -2177,29 +2306,21 @@ function Scan-GPT4All {
         }
     }
     if (-not $exe) {
-        foreach ($uninst in @(
-            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
-            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
-        )) {
-            try {
-                $hit = Get-ItemProperty $uninst -ErrorAction SilentlyContinue |
-                    Where-Object { $_.DisplayName -like "*GPT4All*" } |
-                    Select-Object -First 1
-                if ($hit) {
-                    if ($hit.DisplayIcon -and (Test-Path $hit.DisplayIcon)) { $exe = $hit.DisplayIcon }
-                    elseif ($hit.InstallLocation) {
-                        $cand = Test-PathAny @(
-                            (Join-Path $hit.InstallLocation "bin\chat.exe"),
-                            (Join-Path $hit.InstallLocation "chat.exe"),
-                            (Join-Path $hit.InstallLocation "gpt4all.exe")
-                        )
-                        if ($cand) { $exe = $cand }
-                    }
-                    if (-not $r.Version -and $hit.DisplayVersion) { $r.Version = [string]$hit.DisplayVersion }
-                    break
-                }
-            } catch {}
+        try { $unHits = @(Get-UninstallApps @("*GPT4All*")) } catch { $unHits = @() }
+        $hit = $unHits | Select-Object -First 1
+        if ($hit) {
+            $icon = [string]$hit.DisplayIcon
+            if ($icon) { $icon = ($icon -split ',')[0].Trim('"') }
+            if ($icon -and (Test-Path $icon)) { $exe = $icon }
+            elseif ($hit.InstallLocation) {
+                $cand = Test-PathAny @(
+                    (Join-Path $hit.InstallLocation "bin\chat.exe"),
+                    (Join-Path $hit.InstallLocation "chat.exe"),
+                    (Join-Path $hit.InstallLocation "gpt4all.exe")
+                )
+                if ($cand) { $exe = $cand }
+            }
+            if (-not $r.Version -and $hit.DisplayVersion) { $r.Version = [string]$hit.DisplayVersion }
         }
     }
 
@@ -2235,36 +2356,24 @@ function Scan-Cursor {
         "${env:ProgramFiles}\Cursor\Cursor.exe"
     )
 
-    # Registry uninstall entries
     $regFound = $false
-    $uninstallKeys = @(
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
-    )
-    foreach ($key in $uninstallKeys) {
-        try {
-            $items = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
-            foreach ($item in $items) {
-                $dn = [string]$item.DisplayName
-                if ($dn -notlike "Cursor*") { continue }
-                if ($dn -like "*Mouse*" -or $dn -like "*Cursor Hero*") { continue }
-                $pub = [string]$item.Publisher
-                $loc = [string]$item.InstallLocation
-                $hasExe = $false
-                if ($loc) {
-                    $cand = Join-Path $loc "Cursor.exe"
-                    if (Test-Path $cand) {
-                        $hasExe = $true
-                        if (-not $exe) { $exe = $cand }
-                    }
-                }
-                if (-not $hasExe -and $pub -notlike "*Anysphere*") { continue }
-                $regFound = $true
-                break
+    try { $unHits = @(Get-UninstallApps @("Cursor*")) } catch { $unHits = @() }
+    foreach ($item in $unHits) {
+        $dn = [string]$item.DisplayName
+        if ($dn -like "*Mouse*" -or $dn -like "*Cursor Hero*") { continue }
+        $pub = [string]$item.Publisher
+        $loc = [string]$item.InstallLocation
+        $hasExe = $false
+        if ($loc) {
+            $cand = Join-Path $loc "Cursor.exe"
+            if (Test-Path $cand) {
+                $hasExe = $true
+                if (-not $exe) { $exe = $cand }
             }
-        } catch {}
-        if ($regFound) { break }
+        }
+        if (-not $hasExe -and $pub -notlike "*Anysphere*") { continue }
+        $regFound = $true
+        break
     }
 
     if ($exe -or $regFound) {
@@ -2286,7 +2395,6 @@ function Scan-Cursor {
 function Scan-WindowsAIComponents {
     $r = New-Result "Windows On-Device AI"
     # These are system components on Copilot+ and recent Windows 11
-    $indicators = @()
 
     # Common Appx / system packages related to Windows AI
     if ($null -eq $script:AllAppx) {
@@ -2295,15 +2403,15 @@ function Scan-WindowsAIComponents {
     $aiPkgs = @($script:AllAppx | Where-Object {
         $_.Name -match "Windows\.AI|Microsoft\.Windows\.AI|PhiSilica|WindowsAI|AI\.Model"
     })
+    $parts = @()
 
     if ($aiPkgs) {
         $r.Installed = $true
         $names = ($aiPkgs | Select-Object -First 3 -ExpandProperty Name) -join ", "
-        $r.Details = "Related packages found: $names"
+        $parts += "Related packages found: $names"
         Set-ScanStatus $r "Installed" "On-device components present; no consent key read"
     }
 
-    # Check for known model / component folders (approximate)
     $possible = @(
         "$env:ProgramData\Microsoft\Windows\AI",
         "$env:LOCALAPPDATA\Microsoft\Windows\AI"
@@ -2311,27 +2419,27 @@ function Scan-WindowsAIComponents {
     foreach ($p in $possible) {
         if (Test-Path $p) {
             $r.Installed = $true
-            $r.Details += " | Path indicator: $p"
+            $parts += "Path indicator: $p"
             break
         }
     }
 
     if (-not $r.Installed) {
-        Set-ScanStatus $r "Not Installed" "Not detected"
-        $r.Details = "No Windows AI packages or known AI component folders found"
+        Set-ScanStatus $r "Not Installed"
+        $parts = @("No Windows AI packages or known AI component folders found")
     } elseif (-not $r.Activated -or $r.Activated -eq "Not Installed") {
         Set-ScanStatus $r "Installed" "On-device components present; no consent key read"
     }
     $consent = Get-SystemAiConsent
     if ($consent.Signals.Count -gt 0) {
-        if ($r.Details) { $r.Details += " | " }
-        $r.Details += ($consent.Signals -join "; ")
+        $parts += ($consent.Signals -join "; ")
         if ($r.Installed -and $consent.Denied) {
             Set-ScanStatus $r "Deactivated" "Text and image generation = Deny"
         } elseif ($r.Installed -and $consent.Allowed) {
             Set-ScanStatus $r "Activated" "Text and image generation = Allow"
         }
     }
+    $r.Details = ($parts | Where-Object { $_ }) -join " | "
     return $r
 }
 
@@ -2345,21 +2453,25 @@ function Scan-GitHubCopilot {
         "$env:LOCALAPPDATA\Programs\Microsoft VS Code\resources\app\extensions"
     )
     $found = $false
+    $parts = @()
     foreach ($base in $extPaths) {
         if (Test-Path $base) {
             $copilotExt = Get-ChildItem $base -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like "github.copilot*" }
             if ($copilotExt) {
                 $found = $true
-                $r.Details = "Extension folder: $($copilotExt[0].FullName)"
+                $parts += "Extension folder: $($copilotExt[0].FullName)"
                 break
             }
         }
     }
-    # Also check for GitHub Copilot app / CLI remnants
-    if (Test-Path "$env:LOCALAPPDATA\GitHubCopilot") { $found = $true; $r.Details += " | GitHubCopilot data" }
+    if (Test-Path "$env:LOCALAPPDATA\GitHubCopilot") {
+        $found = $true
+        $parts += "GitHubCopilot data"
+    }
 
     if ($found) {
         $r.Installed = $true
+        $r.Details = ($parts | Where-Object { $_ }) -join " | "
         Set-ScanStatus $r "Installed" "Extension detected"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -2916,6 +3028,7 @@ function Scan-Firefox {
     if ($ffMajor -ge 148 -and $uncovered.Count -gt 0) {
         $r.Details += " | Block AI enhancements does not cover: " + ($uncovered -join ", ")
     }
+    $r.Details = Compact-DetailText $r.Details
 
     $disableParts = @()
     if ($labsOn -or ($labsFact -eq "unknown" -and $r.Installed -and $r.Activated -ne "No AI Features")) {
@@ -2955,10 +3068,15 @@ function Scan-GrokNote {
         "$env:LOCALAPPDATA\Grok\Grok.exe",
         "${env:ProgramFiles}\Grok\Grok.exe"
     )
-    $data = Test-PathAny @(
-        "$env:APPDATA\Grok",
-        "$env:LOCALAPPDATA\Packages\Grok*"
-    )
+    $dataPaths = @("$env:APPDATA\Grok")
+    $pkgRoot = "$env:LOCALAPPDATA\Packages"
+    if (Test-Path $pkgRoot) {
+        $grokPkg = Get-ChildItem $pkgRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "Grok*" } |
+            Select-Object -First 1
+        if ($grokPkg) { $dataPaths += $grokPkg.FullName }
+    }
+    $data = Test-PathAny $dataPaths
     if ($exe -and ([string]$exe).Contains("*")) { $exe = $null }
     if ($exe) {
         $r.Installed = $true
@@ -3093,7 +3211,7 @@ function Initialize-ModelNameIndex {
             $rootItem = Get-Item -LiteralPath $root -ErrorAction SilentlyContinue
             if ($rootItem -and ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { continue }
             if ($lblStatus -and -not $script:CancelScan) {
-                $lblStatus.Text = "Indexing model files in $rootLabel..."
+                $lblStatus.Text = "Checking model files..."
                 $form.Refresh()
                 [System.Windows.Forms.Application]::DoEvents()
             }
@@ -3124,7 +3242,7 @@ function Initialize-ModelNameIndex {
                         if ($it.Name -eq 'weights.bin' -and $it.FullName -notmatch 'OptGuideOnDeviceModel|OptimizationGuide|optimization-guide') { continue }
                         $indexFiles++
                         & $add $it.Name
-                        if ($it.Extension -eq ".gguf") {
+                        if ($it.Extension -match "^\.(gguf|safetensors|ggml)$") {
                             $script:ModelGgufCount++
                             if ($script:ModelGgufRoots -notcontains $root) { $script:ModelGgufRoots += $root }
                         }
@@ -3166,6 +3284,10 @@ function Find-ModelFamilyOnDisk {
                 break
             }
         }
+    }
+    if (-not $script:ClaimedModelNames) { $script:ClaimedModelNames = @{} }
+    foreach ($n in $hits) {
+        try { $script:ClaimedModelNames[$n] = $true } catch {}
     }
     return [PSCustomObject]@{
         Found = ($hits.Count -gt 0)
@@ -3520,43 +3642,39 @@ function Scan-MiniMax {
 }
 
 function Get-FoundryUninstallInfo {
-    $hits = @()
-    foreach ($uninst in @(
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
-    )) {
-        try {
-            $hits += @(Get-ItemProperty $uninst -ErrorAction SilentlyContinue | Where-Object {
-                $n = [string]$_.DisplayName
-                $n -like "*Foundry Local*" -or $n -like "*FoundryLocal*" -or $n -like "Microsoft.FoundryLocal*"
-            })
-        } catch {}
-    }
+    try {
+        $hits = @(Get-UninstallApps @("*Foundry Local*", "*FoundryLocal*", "Microsoft.FoundryLocal*"))
+    } catch { $hits = @() }
     return ($hits | Select-Object -First 1)
 }
 
 
 function Get-UninstallApps {
     param([string[]]$NameLike)
-    $hits = @()
-    $keys = @(
-        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
-        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
-    )
-    foreach ($key in $keys) {
-        try {
-            $items = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
-            foreach ($item in $items) {
-                if (-not $item.DisplayName) { continue }
-                $ok = $false
-                foreach ($pat in $NameLike) {
-                    if ($item.DisplayName -like $pat) { $ok = $true; break }
+    if ($null -eq $script:UninstallAppsCache) {
+        $script:UninstallAppsCache = @()
+        $keys = @(
+            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        )
+        foreach ($key in $keys) {
+            try {
+                $items = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+                foreach ($item in $items) {
+                    if (-not $item.DisplayName) { continue }
+                    $script:UninstallAppsCache += $item
                 }
-                if ($ok) { $hits += $item }
-            }
-        } catch {}
+            } catch {}
+        }
+    }
+    $hits = @()
+    foreach ($item in @($script:UninstallAppsCache)) {
+        $ok = $false
+        foreach ($pat in $NameLike) {
+            if ($item.DisplayName -like $pat) { $ok = $true; break }
+        }
+        if ($ok) { $hits += $item }
     }
     return $hits
 }
@@ -3918,21 +4036,28 @@ function Scan-LocalModels {
     Set-ScanStatus $r "None Found on Disk"
     Initialize-ModelNameIndex
     $roots = @(Get-ModelStorageRoots | Where-Object { Test-Path $_ })
-    $ggufCount = 0
-    if ($null -ne $script:ModelGgufCount) { $ggufCount = [int]$script:ModelGgufCount }
+    if (-not $script:ClaimedModelNames) { $script:ClaimedModelNames = @{} }
+    $left = @()
+    foreach ($n in @($script:ModelNameIndex)) {
+        if ($n -notmatch "\.(gguf|safetensors|ggml)$") { continue }
+        if ($script:ClaimedModelNames.ContainsKey($n)) { continue }
+        $left += $n
+    }
+    $leftCount = @($left).Count
     $foundPaths = @()
     if ($script:ModelGgufRoots) { $foundPaths = @($script:ModelGgufRoots) }
     if ($foundPaths.Count -eq 0) { $foundPaths = @($roots) }
 
-    if ($ggufCount -gt 0) {
+    if ($leftCount -gt 0) {
         $r.Installed = $true
-        Set-ScanStatus $r "Installed" "GGUF files found"
-        $r.Details = "GGUF files: $ggufCount | Folders: " + (($foundPaths | Select-Object -First 4) -join "; ")
+        Set-ScanStatus $r "Installed" "Leftover model files found"
+        $sample = ($left | Select-Object -First 4) -join "; "
+        $r.Details = "Leftover model files: $leftCount | Sample: $sample | Folders: " + (($foundPaths | Select-Object -First 4) -join "; ")
     } elseif ($roots.Count -gt 0) {
-        Set-ScanStatus $r "None Found on Disk" "Storage folders present; no GGUF files"
-        $r.Details = "GGUF files: 0 | Folders: " + (($roots | Select-Object -First 4) -join "; ")
+        Set-ScanStatus $r "None Found on Disk" "Storage folders present; no leftover model files"
+        $r.Details = "Leftover model files: 0 | Folders: " + (($roots | Select-Object -First 4) -join "; ")
     } else {
-        $r.Details = "No model folders or GGUF files found in standard locations"
+        $r.Details = "No model folders or leftover model files found in standard locations"
     }
     return $r
 }
@@ -3940,30 +4065,45 @@ function Scan-LocalModels {
 function Resize-NameAndDisableColumns {
     param($ListView)
     if (-not $ListView) { return }
-    if ($script:ColWidthsSaved -and $ListView.Columns.Count -gt 6) {
-        if ($script:ColWidth0 -gt 0) { $ListView.Columns[0].Width = $script:ColWidth0 }
-        if ($script:ColWidth6 -gt 0) { $ListView.Columns[6].Width = $script:ColWidth6 }
-        return
-    }
-    $styleContent = [System.Windows.Forms.ColumnHeaderAutoResizeStyle]::ColumnContent
-    $styleHeader = [System.Windows.Forms.ColumnHeaderAutoResizeStyle]::HeaderSize
-    foreach ($idx in @(0, 6)) {
-        if ($idx -ge $ListView.Columns.Count) { continue }
-        $ListView.AutoResizeColumn($idx, $styleHeader)
-        $headerW = $ListView.Columns[$idx].Width
-        if ($ListView.Items.Count -gt 0) {
-            $ListView.AutoResizeColumn($idx, $styleContent)
-            $contentW = $ListView.Columns[$idx].Width
-            if ($headerW -gt $contentW) {
-                $ListView.Columns[$idx].Width = $headerW
-            }
+    if ($ListView.Columns.Count -lt 7) { return }
+    $min0 = 72
+    $min6 = 96
+    try {
+        $g = $ListView.CreateGraphics()
+        try {
+            $min0 = [Math]::Max($min0, [int]$g.MeasureString($ListView.Columns[0].Text, $ListView.Font).Width + 24)
+            $min6 = [Math]::Max($min6, [int]$g.MeasureString($ListView.Columns[6].Text, $ListView.Font).Width + 24)
+        } finally { $g.Dispose() }
+    } catch {}
+    $w0 = [int]$script:ColWidth0
+    $w6 = [int]$script:ColWidth6
+    if ($w0 -lt $min0) { $w0 = $min0 }
+    if ($w6 -lt $min6) { $w6 = $min6 }
+    $ListView.Columns[0].Width = $w0
+    $ListView.Columns[6].Width = $w6
+    $script:ColWidth0 = $w0
+    $script:ColWidth6 = $w6
+}
+
+function Update-TrackedNameDisableWidth {
+    param($ListView, [string]$NameText, [string]$DisableText)
+    if (-not $ListView) { return }
+    $font = $ListView.Font
+    try {
+        $g = $script:ColMeasureGraphics
+        if (-not $g) {
+            $g = $ListView.CreateGraphics()
+            $script:ColMeasureGraphics = $g
         }
-    }
-    if ($ListView.Items.Count -gt 0 -and $ListView.Columns.Count -gt 6) {
-        $script:ColWidth0 = $ListView.Columns[0].Width
-        $script:ColWidth6 = $ListView.Columns[6].Width
-        $script:ColWidthsSaved = $true
-    }
+        if ($NameText) {
+            $w = [int]$g.MeasureString($NameText, $font).Width + 24
+            if ($w -gt [int]$script:ColWidth0) { $script:ColWidth0 = $w }
+        }
+        if ($DisableText) {
+            $w6 = [int]$g.MeasureString($DisableText, $font).Width + 24
+            if ($w6 -gt [int]$script:ColWidth6) { $script:ColWidth6 = $w6 }
+        }
+    } catch {}
 }
 
 function Add-SectionHeaderToListView {
@@ -3981,6 +4121,7 @@ function Add-SectionHeaderToListView {
     $item.Font = New-Object System.Drawing.Font($ListView.Font, [System.Drawing.FontStyle]::Bold)
     $item.Tag = "section"
     [void]$ListView.Items.Add($item)
+    Update-TrackedNameDisableWidth -ListView $ListView -NameText $Title -DisableText ""
 }
 
 function Add-ResultToListView {
@@ -3995,7 +4136,7 @@ function Add-ResultToListView {
     $disableText = ""
     if ($r.Installed) {
         $stShow = [string]$r.Activated
-        $hideDisable = @("Not Installed", "None Found on Disk", "Not Detected", "None Detected", "No AI Features", "Deactivated")
+        $hideDisable = @("Not Installed", "None Found on Disk", "No AI Features", "Deactivated")
         if ($hideDisable -contains $stShow) {
             $disableText = ""
         } elseif ($r.DisableHint) {
@@ -4005,6 +4146,18 @@ function Add-ResultToListView {
         }
     }
     $item.SubItems.Add( $disableText ) | Out-Null
+    $tip = @()
+    if ($r.Details) { $tip += [string]$r.Details }
+    if ($disableText) { $tip += [string]$disableText }
+    if ($tip.Count -gt 0) {
+        $tipText = $tip -join " | "
+        if ($tipText.Length -gt 1000) { $tipText = $tipText.Substring(0, 997) + "..." }
+        $item.ToolTipText = $tipText
+    }
+    if (-not $script:SkipListLayout) {
+        Update-TrackedNameDisableWidth -ListView $ListView -NameText $r.Name -DisableText $disableText
+    }
+    $item.Tag = $r
 
     $st = [string]$r.Activated
     $runYes = ([string]$r.Running -like "Yes*")
@@ -4021,9 +4174,11 @@ function Add-ResultToListView {
         $item.ForeColor = [System.Drawing.Color]::Gray
     }
     [void]$ListView.Items.Add($item)
-    $script:UiEnsureN++
-    if ($script:UiEnsureN -eq 1 -or ($script:UiEnsureN % 10 -eq 0)) {
-        $item.EnsureVisible()
+    if (-not $script:SkipListLayout) {
+        $script:UiEnsureN++
+        if ($script:UiEnsureN -eq 1 -or ($script:UiEnsureN % 10 -eq 0)) {
+            $item.EnsureVisible()
+        }
     }
 }
 
@@ -4035,6 +4190,7 @@ function Test-RowIsDetected {
 }
 
 function Update-DetectedButtonStyle {
+    if (-not $btnDetected) { return }
     if ($script:FilterDetected) {
         $btnDetected.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
         $btnDetected.ForeColor = [System.Drawing.Color]::White
@@ -4044,10 +4200,50 @@ function Update-DetectedButtonStyle {
     }
 }
 
+function Show-PostScanActionButtons {
+    param([bool]$Show)
+    foreach ($b in @($btnDetected, $btnExport)) {
+        if (-not $b) { continue }
+        $b.Visible = $Show
+        $b.Enabled = $Show
+        try { $b.TabStop = $Show } catch {}
+    }
+    if ($Show) {
+        # Detected last so a neighbor cannot sit on top of it.
+        if ($btnExport) { $btnExport.BringToFront() }
+        if ($btnDetected) { $btnDetected.BringToFront() }
+        try { $btnDetected.Refresh() } catch {}
+        try { $btnExport.Refresh() } catch {}
+    }
+    Update-DetectedButtonStyle
+}
+
+function Invoke-DetectedFilterToggle {
+    if ($script:FilterBusy) { return }
+    if (-not $script:HasScanResults) { return }
+    if ($btnDetected -and (-not $btnDetected.Visible -or -not $btnDetected.Enabled)) { return }
+    $script:FilterBusy = $true
+    try {
+        $script:FilterDetected = -not $script:FilterDetected
+        Update-DetectedButtonStyle
+        Apply-DetectedFilterView -ListView $lv
+        if ($script:FilterDetected) {
+            Write-Log "FILTER: Detected on"
+        } else {
+            Write-Log "FILTER: Detected off"
+        }
+    } finally {
+        $script:FilterBusy = $false
+        $script:SkipListLayout = $false
+    }
+}
+
 function Show-ScanRows {
-    param($ListView)
+    param($ListView, [switch]$Fast)
     if (-not $ListView) { $ListView = $lv }
     if (-not $ListView) { return }
+    $prevSkip = [bool]$script:SkipListLayout
+    if ($Fast) { $script:SkipListLayout = $true }
     $ListView.BeginUpdate()
     try {
         $ListView.Items.Clear()
@@ -4067,8 +4263,52 @@ function Show-ScanRows {
         }
     } finally {
         $ListView.EndUpdate()
+        $script:SkipListLayout = $prevSkip
     }
-    Resize-NameAndDisableColumns -ListView $ListView
+    if (-not $Fast) {
+        Resize-NameAndDisableColumns -ListView $ListView
+        if (-not $script:FilterDetected -and $ListView.Items.Count -gt 0) {
+            $script:LvCache = New-Object System.Collections.Generic.List[System.Windows.Forms.ListViewItem]
+            foreach ($it in $ListView.Items) { [void]$script:LvCache.Add($it) }
+        }
+    }
+}
+
+function Apply-DetectedFilterView {
+    param($ListView)
+    if (-not $ListView) { $ListView = $lv }
+    if (-not $ListView) { return }
+    if (-not $script:LvCache -or $script:LvCache.Count -lt 1) {
+        Show-ScanRows -ListView $ListView -Fast
+        return
+    }
+    $ok = $true
+    $ListView.BeginUpdate()
+    try {
+        $ListView.Items.Clear()
+        $pending = $null
+        foreach ($it in $script:LvCache) {
+            if ($it.Tag -eq "section") {
+                $pending = $it
+                continue
+            }
+            if ($script:FilterDetected -and -not (Test-RowIsDetected $it.Tag)) { continue }
+            if ($pending) {
+                try { [void]$ListView.Items.Add($pending) } catch { $ok = $false; break }
+                $pending = $null
+            }
+            try { [void]$ListView.Items.Add($it) } catch { $ok = $false; break }
+        }
+    } catch {
+        $ok = $false
+    } finally {
+        try { $ListView.EndUpdate() } catch {}
+    }
+    if (-not $ok) {
+        $script:LvCache = $null
+        Write-Log "FILTER: cache add failed, rebuilding list"
+        Show-ScanRows -ListView $ListView -Fast
+    }
 }
 
 
@@ -4160,7 +4400,7 @@ function Update-GpuLabel {
     if ($util -lt 0 -and $gpuUsed -le 0) {
         $script:GpuFailCount = [int]$script:GpuFailCount + 1
         $lblGpu.Text = "GPU: --"
-        $lblGpu.ForeColor = [System.Drawing.Color]::DimGray
+        $lblGpu.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
         if ($script:GpuFailCount -ge 2 -and $timerGpu) {
             try { $timerGpu.Stop() } catch {}
         }
@@ -4174,7 +4414,7 @@ function Update-GpuLabel {
         $memText = ("{0:N1} GB" -f [math]::Round($gpuUsed / 1GB, 1))
     }
     $lblGpu.Text = "GPU Utilization: $utilText    GPU Memory: $memText"
-    $lblGpu.ForeColor = [System.Drawing.Color]::DimGray
+    $lblGpu.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
 }
 
 function Move-UpdateControls {
@@ -4193,7 +4433,99 @@ function Move-UpdateControls {
             $lblGpu.Top = 14
             $lblGpu.Left = $btnUpdate.Left - 10 - $lblGpu.Width
         }
+        if ($progress -and $lblBarEnd) {
+            $rightPad = 8
+            $gap = 2
+            $lblBarEnd.Width = 48
+            $lblBarEnd.Height = 16
+            $lblBarEnd.Top = $progress.Top
+            $lblBarEnd.Left = $form.ClientSize.Width - $rightPad - $lblBarEnd.Width
+            $barW = $lblBarEnd.Left - $progress.Left - $gap
+            if ($barW -lt 80) { $barW = 80 }
+            $progress.Width = $barW
+            if ($lblStatus) {
+                $lblStatus.Width = ($lblBarEnd.Left + $lblBarEnd.Width) - $lblStatus.Left
+                if ($lblStatus.Width -lt 80) { $lblStatus.Width = 80 }
+            }
+        }
     } catch {}
+}
+
+function Set-ScanBarEnd {
+    param([int]$Percent = -1)
+    if ($Percent -lt 0) { return }
+    $p = $Percent
+    if ($p -gt 100) { $p = 100 }
+    if ($progress) {
+        try { $progress.Value = $p } catch {}
+    }
+    if ($lblBarEnd) { $lblBarEnd.Text = "$p%" }
+}
+
+function Get-ScanStepLabel {
+    param([string]$Hint)
+    $key = [string]$Hint
+    if ($key -like "Scan-*") { $key = $key.Substring(5) }
+    $map = @{
+        "ChatGPT" = "ChatGPT (OpenAI)"
+        "Claude" = "Claude (Anthropic)"
+        "GeminiDesktop" = "Gemini (Google)"
+        "GrokNote" = "Grok (xAI)"
+        "Copilot" = "Copilot (Microsoft)"
+        "Ollama" = "Ollama"
+        "Perplexity" = "Perplexity"
+        "DeepSeek" = "DeepSeek R1 / V4 (DeepSeek)"
+        "Gemma" = "Gemma 3 / 4 (Google)"
+        "Granite" = "Granite 3 / 4 (IBM)"
+        "GLM" = "GLM 4.7 / 5 (Zhipu)"
+        "GptOss" = "gpt-oss (OpenAI)"
+        "GptJPygmalion" = "GPT-J / Pygmalion"
+        "Hunyuan" = "Hunyuan 3 / 4 (Tencent)"
+        "Kimi" = "Kimi K2 / K3 (Moonshot)"
+        "Ling" = "Ling 3 (Ant)"
+        "Llama" = "Llama 3 / 4 (Meta)"
+        "MiniCPM" = "MiniCPM 4 / 5 (ModelBest)"
+        "MiniMax" = "MiniMax M2 / M3 (MiniMax)"
+        "MistralFamily" = "Mistral / Mixtral (Mistral)"
+        "MuseGlimmer" = "Muse Glimmer (Meta)"
+        "Nemotron" = "Nemotron 3 (NVIDIA)"
+        "Phi" = "Phi-4 (Microsoft)"
+        "Qwen" = "Qwen 3 / 4 (Alibaba)"
+        "LocalModels" = "Other Local Models"
+        "BraveLeo" = "Brave + Leo"
+        "GeminiChrome" = "Google Chrome + Gemini"
+        "EdgeCopilot" = "Microsoft Edge + Copilot"
+        "Firefox" = "Mozilla Firefox + AI"
+        "OperaAI" = "Opera + Aria"
+        "Comet" = "Perplexity Comet + AI"
+        "FoundryLocal" = "Foundry Local"
+        "GitHubCopilot" = "GitHub Copilot"
+        "M365Copilot" = "Microsoft 365 Copilot"
+        "NotepadAI" = "Notepad + AI"
+        "PaintAI" = "Paint + AI"
+        "WindowsAIComponents" = "Windows On-Device AI"
+        "AnythingLLM" = "AnythingLLM"
+        "ChatRTX" = "ChatRTX (NVIDIA)"
+        "CherryStudio" = "Cherry Studio"
+        "ClaudeCode" = "Claude Code (Anthropic)"
+        "ComfyUI" = "ComfyUI"
+        "Cursor" = "Cursor"
+        "GAssist" = "G-Assist (NVIDIA)"
+        "GPT4All" = "GPT4All"
+        "Jan" = "Jan"
+        "KoboldCpp" = "KoboldCPP"
+        "LibreChat" = "LibreChat"
+        "LlamaCpp" = "llama.cpp"
+        "LMStudio" = "LM Studio"
+        "Msty" = "Msty"
+        "OpenWebUI" = "Open WebUI"
+        "TextGenWebUI" = "text-generation-webui"
+        "Vllm" = "vLLM"
+        "Windsurf" = "Windsurf"
+    }
+    if ($map.ContainsKey($key)) { return [string]$map[$key] }
+    if ($Hint) { return [string]$Hint }
+    return "item"
 }
 
 # ========== GUI ==========
@@ -4238,6 +4570,9 @@ $lblOS.ForeColor = [System.Drawing.Color]::DarkBlue
 $form.Controls.Add($lblOS)
 
 $script:FilterDetected = $false
+$script:FilterBusy = $false
+$script:SkipListLayout = $false
+$script:LvCache = $null
 $script:ScanRows = @()
 $script:HasScanResults = $false
 $script:ScanBusy = $false
@@ -4270,6 +4605,7 @@ $btnExport.Size = New-Object System.Drawing.Size(100, 34)
 $btnExport.FlatStyle = "Flat"
 $btnExport.Anchor = "Top, Left"
 $btnExport.Visible = $false
+$btnExport.Enabled = $false
 $form.Controls.Add($btnExport)
 
 $btnDetected = New-Object System.Windows.Forms.Button
@@ -4279,6 +4615,7 @@ $btnDetected.Size = New-Object System.Drawing.Size(88, 34)
 $btnDetected.FlatStyle = "Flat"
 $btnDetected.Anchor = "Top, Left"
 $btnDetected.Visible = $false
+$btnDetected.Enabled = $false
 $form.Controls.Add($btnDetected)
 
 $lblStatus = New-Object System.Windows.Forms.Label
@@ -4290,7 +4627,7 @@ $form.Controls.Add($lblStatus)
 
 $progress = New-Object System.Windows.Forms.ProgressBar
 $progress.Location = New-Object System.Drawing.Point(408, 98)
-$progress.Size = New-Object System.Drawing.Size(452, 16)
+$progress.Size = New-Object System.Drawing.Size(382, 16)
 $progress.Minimum = 0
 $progress.Maximum = 100
 $progress.Value = 0
@@ -4298,13 +4635,22 @@ $progress.Style = "Continuous"
 $progress.Anchor = "Top, Left, Right"
 $form.Controls.Add($progress)
 
+$lblBarEnd = New-Object System.Windows.Forms.Label
+$lblBarEnd.Text = ""
+$lblBarEnd.Location = New-Object System.Drawing.Point(816, 98)
+$lblBarEnd.Size = New-Object System.Drawing.Size(48, 16)
+$lblBarEnd.TextAlign = "MiddleLeft"
+$lblBarEnd.Anchor = "Top, Right"
+$lblBarEnd.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
+$form.Controls.Add($lblBarEnd)
+
 $lblGpu = New-Object System.Windows.Forms.Label
 $lblGpu.Text = "GPU Utilization: ...    GPU Memory: ..."
 $lblGpu.Location = New-Object System.Drawing.Point(300, 14)
 $lblGpu.Size = New-Object System.Drawing.Size(430, 22)
 $lblGpu.TextAlign = "MiddleRight"
 $lblGpu.Anchor = "Top, Right"
-$lblGpu.ForeColor = [System.Drawing.Color]::DimGray
+$lblGpu.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
 $form.Controls.Add($lblGpu)
 
 $timerGpu = New-Object System.Windows.Forms.Timer
@@ -4317,6 +4663,7 @@ $lv.Size = New-Object System.Drawing.Size(840, 450)
 $lv.View = "Details"
 $lv.FullRowSelect = $true
 $lv.GridLines = $true
+$lv.ShowItemToolTips = $true
 $lv.Anchor = "Top, Bottom, Left, Right"
 $lv.Columns.Add("AI Name", 170) | Out-Null
 $lv.Columns.Add("Installed", 58) | Out-Null
@@ -4433,38 +4780,48 @@ $btnScan.Add_Click({
     $btnCancel.Enabled = $true
     $btnExport.Visible = $false
     $btnDetected.Visible = $false
+    $btnDetected.Enabled = $false
+    $btnExport.Enabled = $false
     $lblStatus.Text = "Starting scan..."
     $scanWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $progress.Value = 0
+    Set-ScanBarEnd -Percent 0
     $lv.Items.Clear()
     $script:ScanRows = @()
     $script:HasScanResults = $false
     $script:FilterDetected = $false
-    $script:ColWidthsSaved = $false
+    $script:FilterBusy = $false
+    $script:LvCache = $null
     $script:ColWidth0 = 0
     $script:ColWidth6 = 0
+    if ($script:ColMeasureGraphics) {
+        try { $script:ColMeasureGraphics.Dispose() } catch {}
+        $script:ColMeasureGraphics = $null
+    }
     Update-DetectedButtonStyle
     $form.Refresh()
     [System.Windows.Forms.Application]::DoEvents()
 
     Write-Log "SCAN: started by user"
+    $lblStatus.Text = "Checking apps..."
+    Set-ScanBarEnd -Percent 3
+    $form.Refresh()
+    [System.Windows.Forms.Application]::DoEvents()
     $script:ProcSnap = $null
     try { $script:ProcSnap = @(Get-Process -ErrorAction SilentlyContinue) } catch { $script:ProcSnap = @() }
     $script:AllAppx = $null
-    if ($script:CancelScan) { $progress.Value = 0; $lblStatus.Text = "Scan canceled."; return }
-    $lblStatus.Text = "Loading Appx packages..."
-    $form.Refresh()
-    [System.Windows.Forms.Application]::DoEvents()
-    if ($script:CancelScan) { $progress.Value = 0; $lblStatus.Text = "Scan canceled."; return }
+    if ($script:CancelScan) { Set-ScanBarEnd -Percent 0; $lblStatus.Text = "Scan canceled."; return }
     try { $script:AllAppx = @(Get-AppxPackage -ErrorAction SilentlyContinue) } catch { $script:AllAppx = @() }
-    if ($script:CancelScan) { $progress.Value = 0; $lblStatus.Text = "Scan canceled."; return }
+    if ($script:CancelScan) { Set-ScanBarEnd -Percent 0; $lblStatus.Text = "Scan canceled."; return }
     $script:ModelNameIndex = $null
     $script:ModelGgufCount = 0
     $script:ModelGgufRoots = @()
+    $script:ClaimedModelNames = @{}
+    $script:SystemAiConsentCache = $null
+    $script:UninstallAppsCache = $null
 
     # --- On-device model check only (not browsers / host apps) ---
-    $lblStatus.Text = "Checking for on-device models loaded in memory..."
-    $progress.Value = 2
+    $lblStatus.Text = "Checking model files..."
+    Set-ScanBarEnd -Percent 6
     $form.Refresh()
     [System.Windows.Forms.Application]::DoEvents()
 
@@ -4488,16 +4845,13 @@ $btnScan.Add_Click({
     }
 
     if (-not $script:CancelScan) {
-        $lblStatus.Text = "Indexing local model files and tags..."
+        $lblStatus.Text = "Checking model files..."
+        Set-ScanBarEnd -Percent 10
         $form.Refresh()
         [System.Windows.Forms.Application]::DoEvents()
         Initialize-ModelNameIndex
         if (-not $script:CancelScan) {
-            $nIdx = 0
-            $nGguf = 0
-            if ($script:ModelNameIndex) { $nIdx = @($script:ModelNameIndex).Count }
-            if ($null -ne $script:ModelGgufCount) { $nGguf = [int]$script:ModelGgufCount }
-            $lblStatus.Text = "Indexed $nIdx model names ($nGguf GGUF files)"
+            Set-ScanBarEnd -Percent 12
             $form.Refresh()
             [System.Windows.Forms.Application]::DoEvents()
         }
@@ -4593,7 +4947,7 @@ $btnScan.Add_Click({
     foreach ($g in $scanGroups) { $totalSteps += @($g.Fns).Count }
     $step = 0
     if (-not $script:CancelScan) {
-        $lblStatus.Text = "Scanning installed components..."
+        Set-ScanBarEnd -Percent 12
         $form.Refresh()
         [System.Windows.Forms.Application]::DoEvents()
     }
@@ -4605,8 +4959,11 @@ $btnScan.Add_Click({
         if ($script:CancelScan) { break }
         $step++
         $hint = (($fn.ToString() -replace '(?s).*Scan-', 'Scan-') -replace '\s.*', '')
-        $pct = [int][Math]::Min(99, [Math]::Round((($step - 1) / [Math]::Max(1, $totalSteps)) * 100))
-        $progress.Value = $pct
+        $hint = Get-ScanStepLabel $hint
+        $pct = 12 + [int][Math]::Floor((($step - 1) / [Math]::Max(1, $totalSteps)) * 87)
+        if ($pct -gt 99) { $pct = 99 }
+        if ($pct -lt 12) { $pct = 12 }
+        Set-ScanBarEnd -Percent $pct
         $lblStatus.Text = "Scanning $step of $totalSteps : $hint"
         $form.Refresh()
         [System.Windows.Forms.Application]::DoEvents()
@@ -4666,12 +5023,21 @@ $btnScan.Add_Click({
         }
     }
 
+    if (@($results).Count -gt 0) {
+        try { $script:ProcSnap = @(Get-Process -ErrorAction SilentlyContinue) } catch { $script:ProcSnap = @() }
+        foreach ($rr in $results) {
+            $modelRun = Test-IsRunning -AiName $rr.Name -OllamaLoadedModels $ollamaLoaded -LmStudioLoadedModels $lmStudioLoaded -CompatLoadedModels $compatLoaded
+            [void](Set-RunningAndStatus $rr $modelRun)
+        }
+        Show-ScanRows -ListView $lv
+    }
+
     try {
         $btnCancel.Enabled = $false
         $rowCount = @($results).Count
         if ($script:CancelScan -and $rowCount -eq 0) {
             if ($scanWatch) { $scanWatch.Stop() }
-            $progress.Value = 0
+            Set-ScanBarEnd -Percent 0
             $lblStatus.Text = "Scan canceled."
         } else {
             $runningCount = @($results | Where-Object {
@@ -4685,9 +5051,9 @@ $btnScan.Add_Click({
             }).Count
             if ($script:FilterDetected) { Show-ScanRows -ListView $lv }
             else { Resize-NameAndDisableColumns -ListView $lv }
-            $progress.Value = 100
             if ($scanWatch) { $scanWatch.Stop() }
             $sec = if ($scanWatch) { [Math]::Round($scanWatch.Elapsed.TotalSeconds, 1) } else { 0 }
+            Set-ScanBarEnd -Percent 100
             $summary = "Green: $installedCount | Blue (AI on, not running): $activatedCount | Red (running and AI on): $runningCount | Time: $sec sec"
             if ($script:CancelScan) {
                 $lblStatus.Text = "Scan canceled. $summary"
@@ -4703,16 +5069,20 @@ $btnScan.Add_Click({
         if ($scanWatch) { $scanWatch.Stop() }
         $sec = if ($scanWatch) { [Math]::Round($scanWatch.Elapsed.TotalSeconds, 1) } else { 0 }
         if ($script:CancelScan -and @($results).Count -eq 0) {
-            $progress.Value = 0
+            Set-ScanBarEnd -Percent 0
             $lblStatus.Text = "Scan canceled."
         } else {
             $lblStatus.Text = "Scan finished with errors. See Log.txt | Time: $sec sec"
-            $progress.Value = 100
+            Set-ScanBarEnd -Percent 100
             $script:HasScanResults = $true
         }
     }
 
     } finally {
+        if ($script:ColMeasureGraphics) {
+            try { $script:ColMeasureGraphics.Dispose() } catch {}
+            $script:ColMeasureGraphics = $null
+        }
         $script:ScanBusy = $false
         # Intended: Cancel stays visible and grey after a finished or canceled scan.
         $btnCancel.Visible = $true
@@ -4720,10 +5090,23 @@ $btnScan.Add_Click({
         $btnScan.Enabled = $true
         # Intended: first canceled scan still relabels Scan to Rescan.
         $btnScan.Text = "Rescan"
-        $btnExport.Visible = $script:HasScanResults
-        $btnDetected.Visible = $script:HasScanResults
+        $showTools = [bool]$script:HasScanResults
+        Show-PostScanActionButtons -Show $showTools
+        # Arm again after this Scan click returns. A 50 ms Timer was not
+        # enough: the first Detected click was still ignored.
+        if ($form -and $form.IsHandleCreated) {
+            try {
+                $armButtons = [System.Windows.Forms.MethodInvoker]{
+                    $script:ScanBusy = $false
+                    Show-PostScanActionButtons -Show ([bool]$script:HasScanResults)
+                }
+                [void]$form.BeginInvoke($armButtons)
+            } catch {
+                Show-PostScanActionButtons -Show $showTools
+            }
+        }
         if ($script:CancelScan -and -not $script:HasScanResults) {
-            try { $progress.Value = 0 } catch {}
+            Set-ScanBarEnd -Percent 0
         }
         if ($script:CancelScan) {
             if ([string]$lblStatus.Text -notlike "Scan canceled*") {
@@ -4739,18 +5122,11 @@ $btnScan.Add_Click({
 })
 
 $btnDetected.Add_Click({
-    if (-not $script:HasScanResults) { return }
-    $script:FilterDetected = -not $script:FilterDetected
-    Update-DetectedButtonStyle
-    Show-ScanRows -ListView $lv
-    if ($script:FilterDetected) {
-        Write-Log "FILTER: Detected on"
-    } else {
-        Write-Log "FILTER: Detected off"
-    }
+    Invoke-DetectedFilterToggle
 })
 
 $btnExport.Add_Click({
+    if ($script:ScanBusy) { return }
     if (-not $script:HasScanResults) { return }
     $stamp = Get-Date -Format "yyyy-MM-dd_HHmmss"
     $dlg = New-Object System.Windows.Forms.SaveFileDialog
