@@ -1,9 +1,9 @@
 ﻿# Portable AI Scanner - Windows 7 legacy edition
-# Chosen by PortableAIScanner.exe when CurrentVersion is 6.1
+# Chosen by PortableAIScanner.exe when the OS is classified as Windows 7.
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.6.2"
+$script:AppVersion = "1.6.6"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
@@ -13,7 +13,7 @@ function Write-Log {
     param([string]$Message)
     if (-not $script:LogPath) { return }
     $line = "[" + (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "] " + $Message
-    try { Add-Content -Path $script:LogPath -Value $line -ErrorAction SilentlyContinue } catch {}
+    try { Add-Content -Path $script:LogPath -Value ($line + "`r`n") -ErrorAction SilentlyContinue } catch {}
 }
 
 function Get-WindowsVersionInfo {
@@ -197,8 +197,7 @@ function Scan-ByExeOrUninstall {
         [string]$Name,
         [string[]]$Exes,
         [string[]]$UninstallPatterns,
-        [string[]]$ProcessNames,
-        [int[]]$Ports
+        [string[]]$ProcessNames
     )
     $r = New-Result $Name
     $exe = Test-PathAny $Exes
@@ -263,11 +262,13 @@ function Initialize-ModelNameIndex {
     $script:IndexMax = 20000
     function Walk-ModelDir {
         param($dir, $depthLeft)
+        if ($script:CancelScan) { return }
         if (@($script:IndexNames).Count -ge $script:IndexMax) { return }
         if ((Get-Date) -ge $script:IndexDeadline) { return }
         if (-not $dir) { return }
         if (-not (Test-Path -LiteralPath $dir)) { return }
         Get-ChildItem -LiteralPath $dir -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($script:CancelScan) { return }
             if (@($script:IndexNames).Count -ge $script:IndexMax) { return }
             if ((Get-Date) -ge $script:IndexDeadline) { return }
             if ($_.PSIsContainer) {
@@ -284,6 +285,7 @@ function Initialize-ModelNameIndex {
         }
     }
     foreach ($root in Get-ModelStorageRoots) {
+        if ($script:CancelScan) { break }
         if (@($script:IndexNames).Count -ge $script:IndexMax) { break }
         if ((Get-Date) -ge $script:IndexDeadline) { break }
         try { Walk-ModelDir $root 4 } catch {}
@@ -317,7 +319,7 @@ function Find-Family {
 }
 
 function Scan-LocalSummary {
-    $r = New-Result "Local AI Models (other / summary)"
+    $r = New-Result "Other Local Models"
     Initialize-ModelNameIndex
     $gguf = 0
     foreach ($n in @($script:ModelNameIndex)) {
@@ -477,10 +479,15 @@ function Add-Row {
 }
 
 $script:CancelScan = $false
-$btnCancel.Add_Click({ $script:CancelScan = $true; $lblStatus.Text = "Canceling scan..." })
+$btnCancel.Add_Click({
+    $script:CancelScan = $true
+    $lblStatus.Text = "Canceling scan..."
+    Write-Log "SCAN: cancel requested"
+})
 
 $btnScan.Add_Click({
     $script:CancelScan = $false
+    $script:HasScanResults = $false
     $btnScan.Enabled = $false
     $btnCancel.Visible = $true
     $btnCancel.Enabled = $true
@@ -493,57 +500,57 @@ $btnScan.Add_Click({
     $script:ModelNameIndexBuilt = $false
     Write-Log "SCAN: Windows 7 legacy scan started"
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
-
+    try {
     $jobs = @(
         @{ Title = "Local apps"; Fn = {
             Scan-ByExeOrUninstall -Name "Ollama" -Exes @(
                 "$env:LOCALAPPDATA\Programs\Ollama\ollama.exe",
                 "${env:ProgramFiles}\Ollama\ollama.exe"
-            ) -UninstallPatterns @("Ollama*") -ProcessNames @("ollama","ollama app") -Ports @(11434)
+            ) -UninstallPatterns @("Ollama*") -ProcessNames @("ollama","ollama app")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "LM Studio" -Exes @(
                 "$env:LOCALAPPDATA\Programs\LM Studio\LM Studio.exe",
                 "$env:USERPROFILE\AppData\Local\LM Studio\LM Studio.exe"
-            ) -UninstallPatterns @("LM Studio*") -ProcessNames @("LM Studio") -Ports @(1234)
+            ) -UninstallPatterns @("LM Studio*") -ProcessNames @("LM Studio")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "GPT4All" -Exes @(
                 "$env:LOCALAPPDATA\Programs\GPT4All\bin\chat.exe",
                 "$env:LOCALAPPDATA\nomic.ai\GPT4All\bin\chat.exe"
-            ) -UninstallPatterns @("GPT4All*") -ProcessNames @("gpt4all") -Ports @(4891)
+            ) -UninstallPatterns @("GPT4All*") -ProcessNames @("gpt4all")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "Jan" -Exes @(
                 "$env:LOCALAPPDATA\Programs\jan\Jan.exe",
                 "$env:LOCALAPPDATA\jan\Jan.exe"
-            ) -UninstallPatterns @("Jan*") -ProcessNames @("Jan") -Ports @(1337)
+            ) -UninstallPatterns @("Jan*") -ProcessNames @("Jan")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "llama.cpp / llama-server" -Exes @(
                 "$env:USERPROFILE\llama.cpp\llama-server.exe",
                 "$env:USERPROFILE\llama.cpp\llama-cli.exe"
-            ) -UninstallPatterns @("llama.cpp*") -ProcessNames @("llama-server","llama-cli") -Ports @(8080)
+            ) -UninstallPatterns @("llama.cpp*") -ProcessNames @("llama-server","llama-cli")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "KoboldCPP" -Exes @(
                 "$env:USERPROFILE\koboldcpp\koboldcpp.exe"
-            ) -UninstallPatterns @("KoboldCPP*","koboldcpp*") -ProcessNames @("koboldcpp") -Ports @()
+            ) -UninstallPatterns @("KoboldCPP*","koboldcpp*") -ProcessNames @("koboldcpp")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "Msty" -Exes @(
                 "$env:LOCALAPPDATA\Programs\Msty\Msty.exe"
-            ) -UninstallPatterns @("Msty*") -ProcessNames @("Msty") -Ports @()
+            ) -UninstallPatterns @("Msty*") -ProcessNames @("Msty")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "AnythingLLM" -Exes @(
                 "$env:LOCALAPPDATA\Programs\AnythingLLM\AnythingLLM.exe"
-            ) -UninstallPatterns @("AnythingLLM*") -ProcessNames @("AnythingLLM") -Ports @()
+            ) -UninstallPatterns @("AnythingLLM*") -ProcessNames @("AnythingLLM")
         }},
         @{ Title = "Model files"; Fn = { Find-Family "Qwen (Alibaba)" @('(?i)qwen') }},
         @{ Title = ""; Fn = { Find-Family "Llama (Meta)" @('(?i)llama-?[234]','(?i)meta-llama') }},
         @{ Title = ""; Fn = { Find-Family "DeepSeek" @('(?i)deepseek','(?i)r1-distill') }},
-        @{ Title = ""; Fn = { Find-Family "Gemma (Google)" @('(?i)gemma') }},
+        @{ Title = ""; Fn = { Find-Family "Gemma (Google)" @('(?i)gemma-?[234]','(?i)gemma[234]','(?i)medgemma') }},
         @{ Title = ""; Fn = { Find-Family "Phi (Microsoft)" @('(?i)phi-?[34]') }},
         @{ Title = ""; Fn = { Find-Family "GLM (Zhipu)" @('(?i)glm-?[45]','(?i)chatglm') }},
         @{ Title = ""; Fn = { Find-Family "Mistral / Mixtral" @('(?i)mistral','(?i)mixtral') }},
@@ -570,11 +577,12 @@ $btnScan.Add_Click({
     foreach ($job in $jobs) {
         if ($script:CancelScan) { break }
         $i++
-        if ($job.Title) { Add-Section $job.Title }
         $lblStatus.Text = "Scanning $i of $total"
         $progress.Value = [Math]::Min(100, [int](($i / $total) * 100))
         $form.Refresh()
         [System.Windows.Forms.Application]::DoEvents()
+        if ($script:CancelScan) { break }
+        if ($job.Title) { Add-Section $job.Title }
         try {
             $r = & $job.Fn
             Add-Row $r
@@ -585,21 +593,42 @@ $btnScan.Add_Click({
         } catch {
             Write-Log ("SCAN ERROR: " + $_.Exception.Message)
         }
+        [System.Windows.Forms.Application]::DoEvents()
+        if ($script:CancelScan) { break }
     }
 
     $watch.Stop()
+    try { $btnCancel.Enabled = $false } catch {}
     $sec = [Math]::Round($watch.Elapsed.TotalSeconds, 1)
-    $lblStatus.Text = "Scan done in $sec sec. Installed: $found"
-    $progress.Value = 100
-    Write-Log "SCAN: finished in $sec sec, installed $found"
-    if ($script:CancelScan) { $lblStatus.Text = "Scan canceled. " + $lblStatus.Text; Write-Log "SCAN: canceled" }
-    $btnCancel.Visible = $true
-    $btnCancel.Enabled = $false
-    $btnScan.Enabled = $true
-    $btnScan.Text = "Rescan"
-    $script:HasScanResults = $true
-    $btnDetected.Visible = $true
-    $btnExport.Visible = $true
+    $rowCount = @($script:LegacyRows | Where-Object { $_.Kind -eq "row" }).Count
+    if ($script:CancelScan -and $rowCount -eq 0) {
+        $progress.Value = 0
+        $lblStatus.Text = "Scan canceled."
+        Write-Log "SCAN: canceled before any row"
+    } else {
+        $progress.Value = 100
+        if ($script:CancelScan) {
+            $lblStatus.Text = "Scan canceled. Installed: $found | Time: $sec sec"
+            Write-Log "SCAN: canceled after $found installed, $sec sec"
+        } else {
+            $lblStatus.Text = "Scan done in $sec sec. Installed: $found"
+            Write-Log "SCAN: finished in $sec sec, installed $found"
+        }
+        $script:HasScanResults = $true
+    }
+    } finally {
+        # Intended: Cancel stays visible and grey after a finished or canceled scan.
+        $btnCancel.Visible = $true
+        $btnCancel.Enabled = $false
+        $btnScan.Enabled = $true
+        # Intended: first canceled scan still relabels Scan to Rescan.
+        $btnScan.Text = "Rescan"
+        $btnDetected.Visible = $script:HasScanResults
+        $btnExport.Visible = $script:HasScanResults
+        if ($script:CancelScan -and -not $script:HasScanResults) {
+            try { $progress.Value = 0 } catch {}
+        }
+    }
 })
 
 $script:FilterDetected = $false
