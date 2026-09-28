@@ -3,15 +3,46 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.6.7"
+$script:AppVersion = "1.7.0"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
 $script:LogPath = Join-Path $script:LogDir "Log.txt"
 
+function Ensure-LogFile {
+    if (-not $script:LogPath) { return $false }
+    $ok = $false
+    try {
+        if (Test-Path -LiteralPath $script:LogPath) {
+            if (([System.IO.FileInfo]$script:LogPath).Length -gt 0) { $ok = $true }
+        }
+    } catch {}
+    if ($ok) { return $true }
+    $win = Get-WindowsVersionInfo
+    $header = @"
+Portable AI Scanner Log
+====================
+Started : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Version : $($script:AppVersion) (Windows 7 legacy)
+Windows : $win
+Script  : $($MyInvocation.MyCommand.Path)
+Folder  : $script:LogDir
+PS      : $($PSVersionTable.PSVersion)
+====================
+
+"@
+    try {
+        Set-Content -Path $script:LogPath -Value $header -Force -ErrorAction Stop
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Write-Log {
     param([string]$Message)
     if (-not $script:LogPath) { return }
+    if (-not (Ensure-LogFile)) { return }
     $line = "[" + (Get-Date -Format "yyyy-MM-dd HH:mm:ss") + "] " + $Message
     try { Add-Content -Path $script:LogPath -Value ($line + "`r`n") -ErrorAction SilentlyContinue } catch {}
 }
@@ -80,8 +111,18 @@ $script:KeepHostPrompt = -not (Test-ShouldCloseHost)
 if ($script:KeepHostPrompt) { Write-Log "LOAD: launched from a prompt; console will stay open" }
 else { Write-Log "LOAD: launched from exe or Explorer; host console may be hidden" }
 
-Write-Log "LOAD: Windows 7 legacy scanner started"
-
+function Get-WindowsClientKind {
+    try {
+        $os = Get-WmiObject -Class Win32_OperatingSystem -ErrorAction Stop
+        if ([int]$os.ProductType -ne 1) { return 0 }
+        if ([string]$os.Caption -match "(?i)Server") { return 0 }
+        $ver = [version]$os.Version
+        if ($ver.Major -eq 6 -and $ver.Minor -eq 1) { return 7 }
+        if ($ver.Major -ge 10) { return 10 }
+    } catch {}
+    return 0
+}
+$script:WindowsClientKind = Get-WindowsClientKind
 try {
     Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
     Add-Type -AssemblyName System.Drawing -ErrorAction Stop
@@ -90,22 +131,71 @@ try {
     Write-Log "LOAD ERROR: WinForms failed. .NET 3.5 may be missing."
     throw
 }
+if ($script:WindowsClientKind -ne 7) {
+    Write-Log ("LOAD: this script is Windows 7 only (kind=" + $script:WindowsClientKind + ")")
+    $msg = "Portable AI Scanner runs on Windows 7, 10, and 11 only.`r`nWindows Server and Windows 8 / 8.1 are not supported."
+    if ($script:WindowsClientKind -eq 10) {
+        $msg += "`r`n`r`nOn Windows 10 or 11 run AI_Scanner.ps1, or use PortableAIScanner.exe."
+    }
+    try {
+        [System.Windows.Forms.MessageBox]::Show($msg, "Portable AI Scanner", "OK", "Information") | Out-Null
+    } catch {}
+    exit 1
+}
+
+Write-Log "LOAD: Windows 7 legacy scanner started"
+
+function Test-ParentIsScannerExe {
+    try {
+        if ($env:PAS_FROM_EXE -ne "1") { return $false }
+        $here = Get-WmiObject Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop
+        $ppid = 0
+        try { $ppid = [int]$here.ParentProcessId } catch { return $false }
+        if ($ppid -le 0) { return $false }
+        $par = Get-WmiObject Win32_Process -Filter "ProcessId=$ppid" -ErrorAction Stop
+        $path = [string]$par.ExecutablePath
+        if (-not $path) { return $false }
+        $leaf = $path
+        try { $leaf = [IO.Path]::GetFileName($path) } catch {
+            $leaf = $path.Substring($path.LastIndexOf("\") + 1)
+        }
+        return ($leaf -eq "PortableAIScanner.exe")
+    } catch { return $false }
+}
+
+function Test-WrapperMutexHeld {
+    $m = $null
+    try {
+        $m = [System.Threading.Mutex]::OpenExisting("Local\PortableAIScanner")
+        return $true
+    } catch {
+        return $false
+    } finally {
+        if ($m) { try { $m.Dispose() } catch {} }
+    }
+}
 
 $script:InstanceMutex = $null
-try {
-    if ($env:PAS_FROM_EXE -eq "1") {
-        Write-Log "LOAD: exe holds the single-instance lock"
-    } else {
-        $created = $false
-        $script:InstanceMutex = New-Object System.Threading.Mutex($true, "Local\PortableAIScanner", [ref]$created)
-        if (-not $created) {
-            Write-Log "LOAD: another instance is already running"
-            [System.Windows.Forms.MessageBox]::Show(
-                "Portable AI Scanner is already running. Close that window before starting it again.",
-                "Portable AI Scanner", "OK", "Information") | Out-Null
-            exit 2
-        }
+if (-not (Test-ParentIsScannerExe)) {
+    if (Test-WrapperMutexHeld) {
+        Write-Log "LOAD: wrapper instance is already running"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Portable AI Scanner is already running. Close that window before starting it again.",
+            "Portable AI Scanner", "OK", "Information") | Out-Null
+        exit 2
     }
+}
+try {
+    $created = $false
+    $script:InstanceMutex = New-Object System.Threading.Mutex($true, "Local\PortableAIScanner.Script", [ref]$created)
+    if (-not $created) {
+        Write-Log "LOAD: another instance is already running"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Portable AI Scanner is already running. Close that window before starting it again.",
+            "Portable AI Scanner", "OK", "Information") | Out-Null
+        exit 2
+    }
+    Write-Log "LOAD: single-instance lock taken"
 } catch {
     Write-Log "LOAD: mutex check failed (continuing)"
 }
@@ -207,7 +297,7 @@ function Scan-ByExeOrUninstall {
     if ($UninstallPatterns) { $un = @(Get-UninstallHits $UninstallPatterns) }
 
     if ($exe) {
-        Set-Installed $r "Installed" ("Executable: " + $exe) (Get-FileVersionSafe $exe)
+        Set-Installed $r "Installed" ("App: " + $exe) (Get-FileVersionSafe $exe)
         $r.DisableHint = Get-HowToDisable $Name
     } elseif ($un.Count -gt 0) {
         $first = $un[0]
@@ -218,9 +308,9 @@ function Scan-ByExeOrUninstall {
         Set-Installed $r "Installed" $detail $ver
         $r.DisableHint = Get-HowToDisable $Name
     } else {
-        $r.Details = "No executable or Programs and Features entry found"
+        $r.Details = "No " + $Name + " app found"
         if ($Name -eq "Ollama" -and (Test-Path (Join-Path $env:USERPROFILE ".ollama"))) {
-            $r.Details = "Leftover data folder only: " + (Join-Path $env:USERPROFILE ".ollama")
+            $r.Details = "Leftover folder; no app: " + (Join-Path $env:USERPROFILE ".ollama")
         }
     }
 
@@ -271,11 +361,18 @@ function Initialize-ModelNameIndex {
         if ((Get-Date) -ge $script:IndexDeadline) { return }
         if (-not $dir) { return }
         if (-not (Test-Path -LiteralPath $dir)) { return }
+        try {
+            $rootItem = Get-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+            if ($rootItem -and ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return }
+        } catch {}
         Get-ChildItem -LiteralPath $dir -ErrorAction SilentlyContinue | ForEach-Object {
             if ($script:CancelScan) { return }
             if (@($script:IndexNames).Count -ge $script:IndexMax) { return }
             if ((Get-Date) -ge $script:IndexDeadline) { return }
             if ($_.PSIsContainer) {
+                $isReparse = $false
+                try { $isReparse = [bool]($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } catch {}
+                if ($isReparse) { return }
                 if ($depthLeft -gt 0) { Walk-ModelDir $_.FullName ($depthLeft - 1) }
                 return
             }
@@ -299,11 +396,18 @@ function Initialize-ModelNameIndex {
 }
 
 function Find-Family {
-    param([string]$DisplayName, [string[]]$Keywords)
+    param([string]$DisplayName, [string[]]$Keywords, [string[]]$Exclude = @())
     $r = New-Result $DisplayName
     Initialize-ModelNameIndex
+    if (-not $script:ClaimedModelNames) { $script:ClaimedModelNames = @{} }
     $hits = @()
     foreach ($n in @($script:ModelNameIndex)) {
+        if ($script:ClaimedModelNames.ContainsKey($n)) { continue }
+        $skip = $false
+        foreach ($ex in @($Exclude)) {
+            if ($ex -and $n -match $ex) { $skip = $true; break }
+        }
+        if ($skip) { continue }
         foreach ($kw in $Keywords) {
             if ($n -match $kw) {
                 $hits += $n
@@ -311,13 +415,27 @@ function Find-Family {
             }
         }
     }
-    if (-not $script:ClaimedModelNames) { $script:ClaimedModelNames = @{} }
     foreach ($n in $hits) {
-        try { $script:ClaimedModelNames[$n] = $true } catch {}
+        try { $script:ClaimedModelNames[$n] = $DisplayName } catch {}
     }
     if ($hits.Count -gt 0) {
-        $sample = ($hits | Select-Object -First 4) -join "; "
-        Set-Installed $r "Installed" ("Files or folders: " + $sample) ""
+        $variantHits = @($hits | Where-Object { $_ -match '(?i)huihui|hauhau|abliterat|uncensor|heretic|dolphin|whiterabbitneo|white-?rabbit-?neo' } | Select-Object -Unique)
+        $ordered = @()
+        foreach ($n in ($variantHits + $hits)) {
+            if ($ordered -notcontains $n) { $ordered += $n }
+        }
+        $sample = ($ordered | Select-Object -First 4) -join "; "
+        $lab = @()
+        if ($sample -match '(?i)huihui') { $lab += 'huihui' }
+        if ($sample -match '(?i)hauhau') { $lab += 'hauhau' }
+        if ($sample -match '(?i)abliterat') { $lab += 'abliterated' }
+        if ($sample -match '(?i)uncensor') { $lab += 'uncensored' }
+        if ($sample -match '(?i)heretic') { $lab += 'heretic' }
+        if ($sample -match '(?i)dolphin' -and $DisplayName -notlike "Dolphin*") { $lab += 'dolphin' }
+        if ($sample -match '(?i)whiterabbitneo|white-?rabbit-?neo') { $lab += 'whiterabbitneo' }
+        $detail = "Files or folders: " + $sample
+        if ($lab.Count -gt 0) { $detail = $detail + " | Labels: " + ($lab -join ", ") }
+        Set-Installed $r "Installed" $detail ""
         $r.DisableHint = "Open the app that downloaded this model (Ollama, LM Studio, GPT4All, or Jan) and remove the model. Or Control Panel > Programs and Features > uninstall that app."
     } else {
         $r.Activated = "None Found on Disk"
@@ -339,7 +457,21 @@ function Scan-LocalSummary {
         if (@($sample).Count -lt 4) { $sample += $n }
     }
     if ($left -gt 0) {
-        Set-Installed $r "Installed" ("Leftover model files: " + $left + " | Sample: " + ($sample -join "; ")) ""
+        $pref = @($sample | Where-Object { $_ -match '(?i)huihui|hauhau|abliterat|uncensor|heretic|dolphin|whiterabbitneo|white-?rabbit-?neo' })
+        $orderedSample = @()
+        foreach ($n in ($pref + $sample)) { if ($orderedSample -notcontains $n) { $orderedSample += $n } }
+        $detail = "Leftover model files: " + $left + " | Sample: " + ($orderedSample -join "; ")
+        $lab = @()
+        $joined = $orderedSample -join " "
+        if ($joined -match '(?i)huihui') { $lab += 'huihui' }
+        if ($joined -match '(?i)hauhau') { $lab += 'hauhau' }
+        if ($joined -match '(?i)abliterat') { $lab += 'abliterated' }
+        if ($joined -match '(?i)uncensor') { $lab += 'uncensored' }
+        if ($joined -match '(?i)heretic') { $lab += 'heretic' }
+        if ($joined -match '(?i)dolphin') { $lab += 'dolphin' }
+        if ($joined -match '(?i)whiterabbitneo|white-?rabbit-?neo') { $lab += 'whiterabbitneo' }
+        if ($lab.Count -gt 0) { $detail = $detail + " | Labels: " + ($lab -join ", ") }
+        Set-Installed $r "Installed" $detail ""
         $r.DisableHint = "Open Ollama, LM Studio, GPT4All, or Jan and remove models. Or uninstall that app from Control Panel."
     } else {
         $r.Activated = "None Found on Disk"
@@ -353,10 +485,10 @@ function Scan-BrowserExe {
     $r = New-Result $Name
     $exe = Test-PathAny $Exes
     if ($exe) {
-        Set-Installed $r "Installed" ("Browser found. Windows 7 has no on-device Copilot or Gemini Nano to scan. | " + $exe) (Get-FileVersionSafe $exe)
+        Set-Installed $r "No AI Features" ("Browser: " + $exe + " | This version has no AI") (Get-FileVersionSafe $exe)
         $r.DisableHint = ""
     } else {
-        $r.Details = "Browser not found"
+        $r.Details = "No " + $Name + " browser found"
     }
     return $r
 }
@@ -374,19 +506,24 @@ $form.MaximizeBox = $true
 $form.MinimizeBox = $true
 $form.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
+$pnlTop = New-Object System.Windows.Forms.Panel
+$pnlTop.Height = 142
+$pnlTop.Dock = [System.Windows.Forms.DockStyle]::Top
+$pnlTop.TabStop = $false
+
 $lblTitle = New-Object System.Windows.Forms.Label
 $lblTitle.Text = $script:AppName
 $lblTitle.Font = New-Object System.Drawing.Font("Segoe UI", 16, [System.Drawing.FontStyle]::Bold)
 $lblTitle.Location = New-Object System.Drawing.Point(20, 12)
 $lblTitle.AutoSize = $true
-$form.Controls.Add($lblTitle)
+$pnlTop.Controls.Add($lblTitle)
 
 $lblOS = New-Object System.Windows.Forms.Label
 $lblOS.Text = "Windows: " + (Get-WindowsVersionInfo)
 $lblOS.Location = New-Object System.Drawing.Point(20, 48)
 $lblOS.Size = New-Object System.Drawing.Size(840, 22)
 $lblOS.ForeColor = [System.Drawing.Color]::DarkBlue
-$form.Controls.Add($lblOS)
+$pnlTop.Controls.Add($lblOS)
 
 $btnScan = New-Object System.Windows.Forms.Button
 $btnScan.Text = "Scan"
@@ -395,7 +532,7 @@ $btnScan.Size = New-Object System.Drawing.Size(90, 34)
 $btnScan.BackColor = [System.Drawing.Color]::FromArgb(0, 120, 215)
 $btnScan.ForeColor = [System.Drawing.Color]::White
 $btnScan.FlatStyle = "Flat"
-$form.Controls.Add($btnScan)
+$pnlTop.Controls.Add($btnScan)
 
 $btnCancel = New-Object System.Windows.Forms.Button
 $btnCancel.Text = "Cancel"
@@ -404,7 +541,7 @@ $btnCancel.Size = New-Object System.Drawing.Size(80, 34)
 $btnCancel.FlatStyle = "Flat"
 $btnCancel.Visible = $false
 $btnCancel.Enabled = $false
-$form.Controls.Add($btnCancel)
+$pnlTop.Controls.Add($btnCancel)
 
 $btnDetected = New-Object System.Windows.Forms.Button
 $btnDetected.Text = "Detected"
@@ -412,7 +549,7 @@ $btnDetected.Location = New-Object System.Drawing.Point(202, 78)
 $btnDetected.Size = New-Object System.Drawing.Size(88, 34)
 $btnDetected.FlatStyle = "Flat"
 $btnDetected.Visible = $false
-$form.Controls.Add($btnDetected)
+$pnlTop.Controls.Add($btnDetected)
 
 $btnExport = New-Object System.Windows.Forms.Button
 $btnExport.Text = "Export list"
@@ -420,20 +557,20 @@ $btnExport.Location = New-Object System.Drawing.Point(296, 78)
 $btnExport.Size = New-Object System.Drawing.Size(100, 34)
 $btnExport.FlatStyle = "Flat"
 $btnExport.Visible = $false
-$form.Controls.Add($btnExport)
+$pnlTop.Controls.Add($btnExport)
 
 $lblStatus = New-Object System.Windows.Forms.Label
 $lblStatus.Text = "Windows 7 legacy scan. Looks for local apps and model files only."
 $lblStatus.Location = New-Object System.Drawing.Point(406, 78)
 $lblStatus.Size = New-Object System.Drawing.Size(454, 34)
-$form.Controls.Add($lblStatus)
+$pnlTop.Controls.Add($lblStatus)
 
 $progress = New-Object System.Windows.Forms.ProgressBar
 $progress.Location = New-Object System.Drawing.Point(20, 118)
 $progress.Size = New-Object System.Drawing.Size(840, 16)
 $progress.Minimum = 0
 $progress.Maximum = 100
-$form.Controls.Add($progress)
+$pnlTop.Controls.Add($progress)
 
 $lv = New-Object System.Windows.Forms.ListView
 $lv.Location = New-Object System.Drawing.Point(20, 145)
@@ -441,7 +578,7 @@ $lv.Size = New-Object System.Drawing.Size(840, 400)
 $lv.View = "Details"
 $lv.FullRowSelect = $true
 $lv.GridLines = $true
-$lv.Anchor = "Top, Bottom, Left, Right"
+$lv.Dock = [System.Windows.Forms.DockStyle]::Fill
 [void]$lv.Columns.Add("AI Name", 220)
 [void]$lv.Columns.Add("Installed", 70)
 [void]$lv.Columns.Add("Running", 70)
@@ -450,6 +587,12 @@ $lv.Anchor = "Top, Bottom, Left, Right"
 [void]$lv.Columns.Add("Details", 240)
 [void]$lv.Columns.Add("How to disable", 220)
 $form.Controls.Add($lv)
+$form.Controls.Add($pnlTop)
+
+$form.Add_Shown({
+    try { $form.Activate() } catch {}
+    try { if ($btnScan) { $btnScan.Enabled = $true; $btnScan.Select() } } catch {}
+})
 
 
 function Add-Section {
@@ -477,7 +620,10 @@ function Add-Row {
     [void]$item.SubItems.Add($r.Version)
     [void]$item.SubItems.Add($r.Details)
     $hint = ""
-    if ($r.Installed) { $hint = $r.DisableHint }
+    $stShow = [string]$r.Activated
+    if ($r.Installed -and $stShow -ne "No AI Features" -and $stShow -ne "Not Installed" -and $stShow -ne "None Found on Disk" -and $stShow -ne "Deactivated" -and $stShow -ne "Unknown") {
+        $hint = $r.DisableHint
+    }
     [void]$item.SubItems.Add($hint)
     if ($r.Running -like "Yes*") {
         $item.ForeColor = [System.Drawing.Color]::Firebrick
@@ -524,15 +670,24 @@ $btnScan.Add_Click({
                 "${env:ProgramFiles}\Ollama\ollama.exe"
             ) -UninstallPatterns @("Ollama*") -ProcessNames @("ollama","ollama app")
         }},
-        @{ Title = "Local Models"; Fn = { Find-Family "Qwen 3 / 4 (Alibaba)" @('(?i)qwen') }},
-        @{ Title = ""; Fn = { Find-Family "Llama 3 / 4 (Meta)" @('(?i)llama-?[234]','(?i)meta-llama') }},
-        @{ Title = ""; Fn = { Find-Family "DeepSeek R1 / V4 (DeepSeek)" @('(?i)deepseek','(?i)r1-distill') }},
-        @{ Title = ""; Fn = { Find-Family "Gemma 3 / 4 (Google)" @('(?i)gemma-?[234]','(?i)gemma[234]','(?i)medgemma') }},
-        @{ Title = ""; Fn = { Find-Family "Phi-4 (Microsoft)" @('(?i)phi-?[34]') }},
+        @{ Title = "Local Models"; Fn = { Find-Family "DeepSeek R1 / V4 (DeepSeek)" @('(?i)deepseek','(?i)r1-distill') }},
+        @{ Title = ""; Fn = { Find-Family "Dolphin (Cognitive Comp.)" @('(?i)dolphin','(?i)dolphincoder') }},
+        @{ Title = ""; Fn = { Find-Family "Gemma 3 / 4 (Google)" @('(?i)translategemma','(?i)functiongemma','(?i)medgemma','(?i)gemma-?[234]','(?i)gemma[234]') }},
         @{ Title = ""; Fn = { Find-Family "GLM 4.7 / 5 (Zhipu)" @('(?i)glm-?[45]','(?i)chatglm') }},
-        @{ Title = ""; Fn = { Find-Family "Mistral / Mixtral (Mistral)" @('(?i)mistral','(?i)mixtral') }},
         @{ Title = ""; Fn = { Find-Family "GPT-J / Pygmalion" @('(?i)gpt-?j','(?i)pygmalion') }},
         @{ Title = ""; Fn = { Find-Family "gpt-oss (OpenAI)" @('(?i)gpt-oss','(?i)gptoss') }},
+        @{ Title = ""; Fn = { Find-Family "Llama 3 / 4 (Meta)" @('(?i)llama-?[234]','(?i)meta-llama') -Exclude @('(?i)nemotron') }},
+        @{ Title = ""; Fn = { Find-Family "Mistral / Mixtral (Mistral)" @('(?i)mistral','(?i)mixtral') }},
+        @{ Title = ""; Fn = { Find-Family "Phi-4 (Microsoft)" @('(?i)phi-?[34]') }},
+        @{ Title = ""; Fn = { Find-Family "Qwen 3 / 4 (Alibaba)" @('(?i)qwen') }},
+        @{ Title = ""; Fn = { Find-Family "Granite 3 / 4 (IBM)" @('(?i)ibm-granite','(?i)granite-?[34]','(?i)granite[34]','(?i)granite-code','(?i)granite-guardian') }},
+        @{ Title = ""; Fn = { Find-Family "Hunyuan 3 / 4 (Tencent)" @('(?i)hunyuan','(?i)tencent-hunyuan') }},
+        @{ Title = ""; Fn = { Find-Family "Kimi K2 / K3 (Moonshot)" @('(?i)kimi-k','(?i)moonshot-kimi','(?i)moonshotai') }},
+        @{ Title = ""; Fn = { Find-Family "Ling 3 (Ant)" @('(?i)ling-3','(?i)ling3\.0','(?i)inclusionai-ling','(?i)inclusionai') }},
+        @{ Title = ""; Fn = { Find-Family "MiniCPM 4 / 5 (ModelBest)" @('(?i)minicpm') }},
+        @{ Title = ""; Fn = { Find-Family "MiniMax M2 / M3 (MiniMax)" @('(?i)minimax') }},
+        @{ Title = ""; Fn = { Find-Family "Muse Glimmer (Meta)" @('(?i)muse-glimmer','(?i)muse_glimmer','(?i)museglimmer','(?i)glimmer-30b','(?i)muse-spark','(?i)muse_spark','(?i)musespark') }},
+        @{ Title = ""; Fn = { Find-Family "Nemotron 3 (NVIDIA)" @('(?i)nvidia-nemotron','(?i)llama-3\.[13]-nemotron','(?i)nemotron-?[0-9]','(?i)nemotron-(mini|nano|super|ultra|lightning)','(?i)nemotron') }},
         @{ Title = ""; Fn = { Scan-LocalSummary }},
         @{ Title = "Browser-based"; Fn = {
             Scan-BrowserExe "Google Chrome + Gemini" @(
@@ -575,12 +730,27 @@ $btnScan.Add_Click({
             ) -UninstallPatterns @("llama.cpp*") -ProcessNames @("llama-server","llama-cli")
         }},
         @{ Title = ""; Fn = {
+            Scan-ByExeOrUninstall -Name "Llamafile" -Exes @(
+                "$env:LOCALAPPDATA\Programs\llamafile\llamafile.exe",
+                "$env:USERPROFILE\llamafile\llamafile.exe",
+                "${env:ProgramFiles}\llamafile\llamafile.exe"
+            ) -UninstallPatterns @("Llamafile*","llamafile*") -ProcessNames @("llamafile")
+        }},
+        @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "LM Studio" -Exes @(
                 "$env:LOCALAPPDATA\Programs\LM Studio\LM Studio.exe",
                 "$env:USERPROFILE\AppData\Local\LM Studio\LM Studio.exe",
                 "$env:LOCALAPPDATA\LM-Studio\LM Studio.exe",
                 "$env:LOCALAPPDATA\LM Studio\LM Studio.exe"
             ) -UninstallPatterns @("LM Studio*") -ProcessNames @("LM Studio")
+        }},
+        @{ Title = ""; Fn = {
+            Scan-ByExeOrUninstall -Name "LocalAI" -Exes @(
+                "$env:LOCALAPPDATA\Programs\LocalAI\local-ai.exe",
+                "$env:LOCALAPPDATA\Programs\LocalAI\localai.exe",
+                "${env:ProgramFiles}\LocalAI\local-ai.exe",
+                "${env:ProgramFiles}\LocalAI\localai.exe"
+            ) -UninstallPatterns @("LocalAI*","Local AI*","local-ai*") -ProcessNames @("local-ai","localai")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "Msty" -Exes @(
@@ -678,7 +848,8 @@ $btnDetected.Add_Click({
             $r = $row.R
             $keep = $true
             if ($script:FilterDetected) {
-                $keep = $r.Installed -or ($r.Running -like "Yes*")
+                $st = [string]$r.Activated
+                $keep = ($st -eq "Installed" -or $st -eq "Deactivated" -or $st -eq "Unknown" -or $st -eq "Activated" -or $st -eq "Model loaded" -or $st -eq "Error")
             }
             if ($keep) {
                 if ($pendingHeader) {
@@ -704,7 +875,16 @@ $btnExport.Add_Click({
     try {
         $lines = @()
         $lines += '"AI Name","Installed","Running","Status","Version","Details","How to disable"'
+        $sectionNames = @("Major Apps","Local Models","Browser-based","Microsoft Apps","Other Apps")
         foreach ($item in $lv.Items) {
+            $name0 = ""
+            if ($item.SubItems.Count -gt 0) { $name0 = [string]$item.SubItems[0].Text }
+            $inst = ""
+            $stat = ""
+            if ($item.SubItems.Count -gt 1) { $inst = [string]$item.SubItems[1].Text }
+            if ($item.SubItems.Count -gt 3) { $stat = [string]$item.SubItems[3].Text }
+            if ($sectionNames -contains $name0) { continue }
+            if (-not $inst -and -not $stat) { continue }
             $cols = @()
             foreach ($si in $item.SubItems) {
                 $t = [string]$si.Text

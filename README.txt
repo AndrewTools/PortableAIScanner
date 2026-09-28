@@ -15,7 +15,7 @@ You may not modify or republish it.
 You run it at your own risk. Windows may warn that the app is
 unsigned.
 
-Current version: 1.6.7
+Current version: 1.7.0 Build 0053
 
 
 What to put in the folder
@@ -45,7 +45,12 @@ How to scan
      the visible list as a CSV file.
   4. Click Rescan to scan again. Click Cancel to stop a scan.
 
-A second launch asks you to close the window that is already open.
+How to disable is blank when Status is Deactivated or Unknown,
+or when that row has no AI to turn off.
+
+A second launch of the exe or the script asks you to close the
+window that is already open. Starting the exe and then the .ps1
+(or the other way around) also asks you to close the first window.
 
 On Windows 10/11, Check for update looks up the latest version.
 It does not download files.
@@ -55,7 +60,7 @@ Colors
 ------
   - Red     The app is open and AI is on, or a local model is loaded
   - Blue    AI is on or a model is loaded, and the app is closed
-  - Green   Installed, turned off, or the AI switch could not be read
+  - Green   Turned off, AI unread, or a known browser exe is running with no install path
   - Gray    Not installed, or this browser version has no AI
 
 

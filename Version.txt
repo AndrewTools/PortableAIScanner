@@ -4,64 +4,251 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
+1.7.0  (2026-09-27)
+==============================================================================
+Build: 0053
+
+Added
+- Scan runs one step at a time so Cancel and close can paint.
+- Windows app list and model-file walk run in the background.
+
+Changed
+- Detected uses a saved list. It does not copy every row on
+  each click. Off puts the full list back.
+- Close stops the background walk, waits a short moment, then
+  always closes it.
+- Local model checks stay on this PC (127.0.0.1, localhost,
+  or ::1). They do not use the system proxy.
+- ChatGPT, Grok, Ollama, Perplexity, and LM Studio Running is
+  Yes only if the process path looks like that app.
+- A failed scan step stops that check and shows Scanner Error.
+  It does not keep filling the same row.
+- Notepad settings are read in place. No temp copy.
+- vLLM Python walk stops after 8 seconds.
+- Export CSV prefixes fields that start with = + - @.
+- Check for update does not follow redirects.
+- List column widths stay put during a scan. Rows update in
+  small groups and do not jump.
+- After a scan, Running and Status refresh in place.
+- How to disable is blank when Status is Deactivated or Unknown.
+- Detected keeps a thin border. After you click it, focus
+  moves to the list. Off-state border is black, same as
+  Cancel and Export.
+- Firefox install also uses the Apps list location.
+  Thunderbird is skipped.
+- One-copy lock is always taken. Starting the .ps1 while the
+  exe is open asks you to close the first window. Starting
+  from the exe is not treated as a second copy.
+- Windows 7 first exe start is not treated as already running.
+- ollama, foundry, llama-server, and open-webui count as
+  installed only if the command path looks like that app.
+- text-generation-webui needs webui.py, server.py, one_click.py,
+  start_windows.bat, start_wsl.bat, or oobabooga.exe. python.exe
+  alone is not enough.
+- Microsoft 365 Copilot Running is Yes only if the process
+  path looks like that Copilot app. Word, Excel, PowerPoint,
+  Outlook, OneNote, and Windows Copilot do not count.
+- ChatRTX Running is Yes only for NVIDIA\ChatRTX or
+  NVIDIA\ChatWithRTX. NVIDIA App, GeForce, Overlay, and any
+  other ChatRTX.exe do not count.
+- Chrome, Edge, Firefox, Opera, Brave, and Comet Running is
+  Yes if that browser is open, even when Installed is No.
+  Status is Unknown. Installed stays No.
+- Firefox AI policy is read from current-user and machine policy.
+- Firefox newer than 157 with no pref lines is Unknown, not
+  Deactivated.
+- Firefox 148-157 with a readable profile and no pref lines
+  is Activated.
+- Firefox 130-147 with no pref lines follows that version
+  default (off unless that version listed a feature on).
+- Firefox 136 disable text uses sidebar / Browser Layout,
+  not Labs.
+- Firefox 141 disable text does not claim a Settings page
+  for link previews. Official help starts at 142.
+- Cancel is checked between folders in the model, vLLM,
+  llama.cpp, Llamafile, and KoboldCPP walks.
+- Model index and vLLM list at most 500 children per folder.
+- llama.cpp, LocalAI, and KoboldCPP loaded names feed family
+  rows.
+- Notepad with no stored switch is Activated unless policy
+  turns it off.
+
+Fixed
+- Firefox 148 with empty prefs is not treated as Block.
+- Firefox 149-157 with empty prefs is not Unknown only
+  because 148 was the last listed version.
+- Detected on and off reuses the same rows, adds them in one
+  batch, and ignores extra clicks while busy.
+- Detected no longer hangs a few seconds on first click.
+- Close does not wait for the Windows app list or model walk.
+- Background Store list is used only if a package name is
+  present.
+- Model index does not paint from the background walk.
+- If Version.txt is missing, the starter uses the Build
+  compiled into the exe.
+- If the window is gone, the scan stops the background walk.
+- Check for update stops if the GitHub reply is over 64 KB
+  or has no tag.
+- Windows 7 scanner is version 1.7.0.
+- Local model checks do not follow redirects off this PC.
+
+Removed
+- Notepad no longer loads a copy of its settings into the
+  registry.
+
+==============================================================================
+1.6.9  (2026-09-26)
+==============================================================================
+Changed
+- Chrome and Edge also search Beta, Dev, and Canary. The newest
+  channel version sets the AI cutoff.
+- Chrome, Edge, Brave, Opera, and Comet read extra profiles
+  (up to 8). Any profile with AI on is Activated.
+- Chrome and Edge on-device search does not follow shortcut
+  folders. Folder checks use the exact folder name.
+- Chrome and Edge settings files can be read up to 12 MB. If
+  the file was cut and no on/off key was found, Status is Unknown.
+- Firefox Details stay short.
+- Firefox 149 Details lists translations / PDF alt text / Smart
+  Window / speech recognition only when that control is on.
+- How to disable shows for Activated, Unknown, Deactivated,
+  Installed, and Model loaded. It stays blank for Not Installed,
+  None Found on Disk, and No AI Features.
+- Export CSV skips section header rows.
+- Windows 7 adds Granite, Hunyuan, Kimi, Ling, MiniCPM, MiniMax,
+  Muse Glimmer, Nemotron, LocalAI, and Llamafile. Gemma also
+  matches functiongemma and translategemma.
+- Windows 7 Llama rows skip filenames that contain nemotron so
+  those files stay on Nemotron.
+- Windows 7 model walk skips shortcut folders.
+- Title row stays on top. The list cannot cover Scan after
+  maximize or DPI scale. The window comes forward when shown.
+- Starter splash waits on the scanner window, not every
+  program on the PC. It closes after 20 seconds if the window
+  title is not seen.
+- If Log.txt is missing or empty, write the header and keep
+  logging. Starting from the exe still keeps the starter lines.
+- Second launch closes the one-copy lock before exit.
+- Local model rows can show Model loaded if a matching name is
+  in memory even when no weight file was found. Installed is Yes.
+- llama.cpp, LocalAI, and KoboldCPP list loaded names only when
+  that program is open. LocalAI does not list them if
+  llama-server is also open.
+- Loaded names can come from more than one local port.
+  llama.cpp and LocalAI keep their own 8080 list.
+- Cursor Running = Yes only if the Cursor editor is open, not
+  Mouse Without Borders or Cursor Hero.
+- Copilot Running = Yes only if the Microsoft Copilot app
+  path matches, not any program named Copilot. A blank path
+  plus the name Copilot is not Yes.
+- The window scales with Windows display size.
+- Closing the window during a scan cancels the scan. No error box.
+- Model file walk skips blobs / sha256 / .git folders and does
+  not walk a child folder if the parent is already listed. If
+  the walk stops early, Other Local Models and family rows that
+  found no files say the folder was not fully listed. Status
+  stays None Found on Disk.
+- Gemma disk match includes names like gemma-7b.
+- Right-click Run with PowerShell restarts so the window can open.
+- Paint is Activated if only some Paint AI policy flags are off.
+- G-Assist leftover NVIDIA folder without the app is Not Installed.
+- Gemini Desktop looks only three folders deep for Gemini.exe.
+  A folder with no app is Not Installed.
+- Windows 7 script shows the wrong-OS message after the window
+  is ready.
+- GitHub Copilot How to disable names VS Code only.
+- LibreChat no longer tests port 3080.
+
+==============================================================================
+1.6.8  (2026-09-26)
+==============================================================================
+Added
+- If Log.txt is missing, create it with the standard header.
+- Dolphin (Cognitive Comp.) local model row. Same
+  Installed rules as other families. Not treated as malware.
+- Qwen also matches Qwen3.8-Omni and Qwen3.8-Omni-Flash weight names.
+- Family and leftover Details list Labels when a file or tag
+  name includes huihui, hauhau, abliterated, uncensored,
+  heretic, dolphin, or whiterabbitneo. Status stays Installed.
+  No extra row and not treated as malware.
+- LocalAI and Llamafile rows under Other Apps. A leftover folder
+  without the program is Not Installed.
+- If Ollama, LM Studio, llama.cpp, or LocalAI has a loaded
+  name that is exactly promptlock, Details say Loaded name
+  matches that tag. Color does not change.
+
+Changed
+- Major Apps Details use App: path or package name. Leftover
+  folders say Leftover folder; no app. Missing apps say
+  No <name> app found.
+- Microsoft Apps Details use the same App: wording.
+  Notepad, Paint, and Windows On-Device AI still use
+  Activated or Deactivated for the AI switch.
+- Microsoft Copilot is Activated when present and not policy-off.
+  Microsoft 365 Copilot is Activated if the Office switch is on,
+  Unknown if unread, Deactivated if policy off.
+- Other Apps Details use the same App: wording. A leftover
+  folder without the program is Not Installed.
+- Browser Details use Browser: path. Missing rows say
+  No <name> browser found. Extra text is AI on, AI off,
+  This version has no AI, Could not read settings, or
+  Residual model files.
+- Firefox Details use that same short template. Activated
+  can add which controls are on.
+- Windows 7 Details use App: / Browser: and the same
+  leftover wording.
+- Major Apps rows are A-Z.
+- Local Models rows are A-Z. Other Local Models stays last.
+- Dolphin match is the dolphin name only, not the publisher folder.
+- Dolphin row Details do not also say Labels: dolphin.
+- A model file or tag is listed on one Local Models row only.
+  DeepSeek-R1-Distill-Qwen stays DeepSeek. Llama-3.1-Nemotron
+  stays Nemotron. Other Local Models still hides claimed files.
+- Firefox 149 and later Details name which AI controls are on:
+  chatbot, tab groups, link previews, translations, PDF alt text,
+  Smart Window, and speech recognition.
+- If Windows policy sets Firefox AI Controls Default to blocked,
+  Status is Deactivated. How to disable stays Settings > AI Controls.
+
+==============================================================================
 1.6.7  (2026-09-26)
 ==============================================================================
 Changed
-- Detected and Export stay hidden and disabled until the scan
-  finishes. They are armed again after the Scan click ends.
-- Windows 10/11: percent on the bar, Checking apps... then
-  Checking model files..., then Scanning N of M with the list
-  title. GPU line uses the same dark text. Windows 7 does not
-  get those UI pieces.
-- Windows 7 list groups and row titles match Windows 10/11:
-  Major Apps, Local Models, Browser-based, Other Apps.
-  Chrome and Firefox use the + Gemini / + AI names.
-- Windows 7 Detected keeps a group title when that group
-  still has a row.
+- Detected and Export stay hidden until the scan finishes.
+- Windows 10/11: percent on the bar, Checking apps..., Checking
+  model files..., then Scanning N of M. Windows 7 does not get
+  those UI pieces.
+- Windows 7 list groups and row titles match Windows 10/11.
+  Chrome and Firefox use the + Gemini / + AI names. Detected
+  keeps a group title when that group still has a row.
 - Copilot and Microsoft 365 Copilot Running is Yes when that
-  app process is open. Windows On-Device AI stays Running No.
+  app is open. Windows On-Device AI stays Running No.
 - Other Local Models counts leftover GGUF, safetensors, and
-  ggml names that no family row already claimed. Loaded IDs
-  with no family match still show on that row.
-- llama.cpp Model loaded only if llama-server is open.
+  ggml names that no family row already claimed.
+- llama.cpp Model loaded only if llama-server is open. Lists
+  only models from that port, not KoboldCPP.
 - Hover a row to read Details and How to disable.
-- Text and image generation consent is read once per scan.
-- Uninstall registry is read once per scan.
 - Claude Code Running also matches .local\bin\claude.exe.
-- GitHub Copilot and Windows On-Device AI Details no longer
-  start with a pipe.
 - Grok leftover folder uses the real Packages folder name.
-- Wrapper allows only Windows 7, 10, and 11. RtlGetVersion plus
-  workstation product type. Windows Server is blocked even when
-  the version number is 10.0. Rebuild PortableAIScanner.exe.
-- Name and How to disable widths are measured while rows are
-  added, not with a full-list resize after the last row.
+- Starter allows only Windows 7, 10, and 11. Windows Server is
+  blocked even when the version number is 10.0.
+- Name and How to disable widths are measured as rows are added.
 - Cursor, GPT4All, and Foundry Local use the same Apps-list
   read as the other rows.
-- README.txt is a short overview only. Details stay here.
 - A very large model folder may not be fully listed.
 - Firefox Details drop repeated phrases.
-- Right-click AI_Scanner.ps1 on Windows Server shows the
-  same not-supported message as the starter.
-- Running is checked again at the end of the scan so an
-  app opened during the scan can show Yes.
-- Windows 7: a row is Red when Running is Yes.
-- llama.cpp Model loaded lists only models from the
-  llama-server port, not KoboldCPP.
-- Windows 7: Running is checked again at the end of the
-  scan. Other Local Models leftover files include
-  safetensors and ggml. LM Studio also looks in
-  %LOCALAPPDATA%\LM-Studio.
-- Windows 7 browser rows no longer pass an empty process name into Get-Process.
+- Right-click AI_Scanner.ps1 on Windows Server shows the same
+  not-supported message as the starter.
+- Running is checked again at the end of the scan, including
+  on Windows 7, so an app opened during the scan can show Yes.
+- Windows 7: a row is Red when Running is Yes. Other Local
+  Models leftover files include safetensors and ggml. LM Studio
+  also looks in %LOCALAPPDATA%\LM-Studio.
+- Windows 7 browser Running no longer uses a blank process name.
 
 Fixed
-- Detected is clickable the first time it appears after a scan.
-- Detected uses Click only. A second event cannot run until
-  the list rebuild finishes.
-- Detected cache add failure rebuilds the list instead of
-  leaving it empty.
-- Detected on/off reuses the scanned rows. Turning it off
-  does not rebuild the list.
+- Detected is clickable the first time it appears. On and off
+  reuse the scanned rows.
 
 ==============================================================================
 1.6.6  (2026-09-26)
@@ -72,22 +259,20 @@ Changed
   is Not Installed. Details name the Office program.
 - Notepad and Paint are Activated when Windows text and image
   generation is Allow and no app off switch is stored.
-- Notepad and Paint Details keep the short status sentence.
-- Notepad policy-off Details name the policy key once.
+  Policy-off Details name the policy once.
 - Status no longer uses the leftover word App running.
 - DeepSeek Details say DeepSeek family, not aggressive match.
 - Rescan turns Detected off.
 - The window starts maximized.
-- After a scan the GPU line waits for the next 2-second tick. Two
-  failed reads stop the timer and show GPU: --.
+- After a scan the GPU line waits for the next 2-second tick.
+  Two failed reads stop the timer and show GPU: --.
 - Grok (xAI) Running is Yes when Grok.exe is open.
 - Name and How to disable widths are measured again on each scan.
 - Other Apps order is A-Z, including ChatRTX and G-Assist.
 - Copilot and Microsoft 365 Copilot Activated means the app is
-  installed and not policy-off, not a live chat.
+  present and not policy-off, not a live chat.
 - Copy row includes How to disable.
-- Every Log.txt event line has a blank line after it. The header
-  field block stays packed.
+- Every Log.txt event line has a blank line after it.
 - Paint mixed-policy Details start with Some Paint AI tools may
   still be on. Status stays Deactivated.
 - Windows 7 still uses the shorter list. Model-index budget,
@@ -95,14 +280,12 @@ Changed
 - Detected also keeps Scanner Error rows.
 - ComfyUI Installed no longer uses a stable-diffusion-webui folder.
 - LM Studio Installed also looks in %LOCALAPPDATA%\LM-Studio.
-- Windows On-Device AI with packages or folders and no consent key
-  is Installed. Allowed stays Activated. Deny stays Deactivated.
-  Details list the consent key when one is found.
-- Model index: 8 seconds for the whole walk, depth 4, 20,000 files.
-  Skips shortcut folders. Errors log the short folder name, not
-  the full path.
-- Browser settings files are read up to 4 MB. The text is dropped
-  after the AI keys are checked.
+- Windows On-Device AI with packages or folders and no consent
+  key is Installed. Allowed stays Activated. Deny stays
+  Deactivated.
+- Model index: 8 seconds for the whole walk, depth 4, 20,000
+  files. Skips shortcut folders.
+- Browser settings files are read up to 4 MB.
 - Local Models sit under their own header. Titles use Family
   versions (Vendor). Leftover files are Other Local Models.
 - Major Apps titles use Product (Vendor): ChatGPT (OpenAI),
@@ -114,38 +297,35 @@ Changed
 - Microsoft Apps titles: Foundry Local, GitHub Copilot,
   Microsoft 365 Copilot, Notepad + AI, Paint + AI,
   Windows On-Device AI.
-- Ollama loaded models and tags come from the local HTTP API only.
-  The scan does not run ollama.exe or query /v1/models for Ollama.
-- Local Models filename match no longer uses bare kimi, gemma, or
-  granite. Versioned names still match.
+- Ollama loaded models and tags come from its local app reply
+  only. The scan does not run ollama.exe.
+- Local Models filename match no longer uses bare kimi, gemma,
+  or granite. Versioned names still match.
 - Perplexity Comet with no AI setting is Unknown. A Comet folder
   without comet.exe is Not Installed.
 - ChatGPT leftover Packages folder without a Store app or exe
   is Not Installed.
-- Copilot and Microsoft 365 Copilot Details say app present; no
-  policy off (not a live-session check) when Status is Activated.
-- Jan, Claude, and Foundry Local Running only count a process whose
-  path looks like that product. An unread path is not Running.
-  Foundry Local also matches FoundryLocal.exe.
+- Jan, Claude, and Foundry Local Running only count a process
+  whose path looks like that product. Foundry Local also
+  matches FoundryLocal.exe.
 - ComfyUI Running only counts python or ComfyUI.exe whose path
-  contains ComfyUI. G-Assist and GitHub Copilot stay process-empty
-  (Running stays No).
-- Ports 8080, 5000, 5001, and 3000 are queried only if llama-server
-  or koboldcpp is running from a matching path. Local HTTP JSON
-  over 64 KB or not starting with { or [ is ignored.
-- Edge with no readable settings files or policy is Unknown. If
-  Sidebar or On-device AI is off, leftover model files stay in
-  Details and Status is Deactivated.
+  contains ComfyUI. G-Assist and GitHub Copilot Running stays
+  No.
+- Ports 8080, 5000, 5001, and 3000 are checked only if
+  llama-server or koboldcpp is running. Bad or huge local
+  replies are ignored.
+- Edge with no readable settings or policy is Unknown. If
+  Sidebar or On-device AI is off, leftover model files stay
+  in Details and Status is Deactivated.
 
 Fixed
-- Build_Wrapper.bat checks each script by hash (64 characters). It
-  no longer reads certutil text.
-- Open WebUI is Installed only with an exe, docker-compose file,
-  open-webui on PATH, or an Apps entry. A data folder alone is
-  leftover.
-- Port 4891 is only checked if GPT4All is present (LM Studio still
-  allowed). Port 1337 only if Jan.exe is present. Port 3080 stays
-  off.
+- Starter checks the script file before launch.
+- Open WebUI is Installed only with an exe, docker-compose
+  file, open-webui on PATH, or an Apps entry. A data folder
+  alone is leftover.
+- Port 4891 is only checked if GPT4All is present (LM Studio
+  still allowed). Port 1337 only if Jan.exe is present.
+  Port 3080 stays off.
 - Firefox reads the profile list and only those folders for
   settings. It does not walk cache trees.
 - Cursor Apps-list match is a name starting with Cursor plus
@@ -156,21 +336,17 @@ Fixed
 1.6.5  (2026-09-25)
 ==============================================================================
 Changed
-- Check for update restores the previous secure-connection setting
+- Check for update puts the Windows connection setting back
   after the GitHub call.
-- Model index does not walk Downloads or Desktop. Those folders are
-  only a shallow koboldcpp*.exe hunt. Status bar names the folder
-  being scanned (Documents\models, Hugging Face cache, and so on).
-- README states that Notepad may load a copied settings file with
-  reg.exe when the file scan cannot read the AI switch.
-- GPU numbers update about every 2 seconds while the window is idle.
-  They pause during a scan, then refresh once when the scan ends.
-- Scan setup is inside the same try as the scan, so a failure before
-  the Windows app list still turns Scan back on and clears the GPU
-  pause.
+- Model index does not walk Downloads or Desktop. Those
+  folders are only a shallow koboldcpp*.exe hunt. Status bar
+  names the folder being scanned.
+- GPU numbers update about every 2 seconds while idle. They
+  pause during a scan, then refresh once when the scan ends.
+- If setup fails before the app list, Scan turns back on.
 - Summary counts match row colors. Red is running and AI on.
-  Blue is AI on with the process closed. Green includes an open
-  app whose AI is off.
+  Blue is AI on with the process closed. Green includes an
+  open app whose AI is off.
 - Detected hides gray rows only. An open browser with No AI
   Features stays hidden.
 - How to disable also appears for Installed and Unknown when
@@ -178,34 +354,28 @@ Changed
   Features.
 
 Fixed
-- Cancel with no rows: status is Scan canceled, progress is 0,
-  Detected and Export stay hidden. That includes cancel during
-  startup, the Windows app list, model check, or model index.
-  Those paths do not flash Checking for on-device models or
-  Indexed N model names, and they do not run ollama list.
-- Cancel after some rows keeps the color counts. It does not say
-  Scan complete.
-- Cancel is checked between index folders, after each folder
-  listing, between scanners, and on llama.cpp / KoboldCPP walks.
-  Section headers are added after that check so cancel does not
-  leave an empty section. A late click after the scan is done
-  stays ignored.
-- Windows 7 cancel uses the same no-row rule and turns Scan back
-  on. It does not say Scan done. Cancel is written to the log.
-- Cancel during the Windows app list no longer leaves Scan disabled.
-  Buttons are always reset at the end.
-- Microsoft Edge + Copilot Installed is Yes when msedge.exe exists.
-  Status stays Activated, Deactivated, or No AI Features.
+- Cancel with no rows: Scan canceled, progress 0, Detected
+  and Export stay hidden. Cancel after some rows keeps the
+  color counts and does not say Scan complete.
+- Cancel is checked between folders and each item. A late
+  click after the scan is ignored.
+- Windows 7 cancel uses the same no-row rule and turns Scan
+  back on. Cancel is written to the log.
+- Cancel during the Windows app list no longer leaves Scan
+  disabled.
+- Microsoft Edge + Copilot Installed is Yes when msedge.exe
+  exists. Status stays Activated, Deactivated, or No AI
+  Features.
 - Claude leftover folders without Claude.exe are Not Installed.
 - ChatGPT leftover .codex folder without an exe is Not Installed.
-- Broken app-list name match after a regex escape was removed.
-  Name match is a simple wildcard only.
+- Apps-list name match is a simple name match.
 - Update check closes the GitHub reply when finished.
 - Local port check closes the socket on timeout.
-- When started from the exe, the script no longer overwrites the
-  exe Log.txt header.
+- When started from the exe, the script no longer overwrites
+  the exe Log.txt header.
 - GPU timer stops when the window closes.
-- A scanner error row follows Detected while the scan is running.
+- A scanner error row follows Detected while the scan is
+  running.
 
 ==============================================================================
 1.6.4  (2026-09-25)
@@ -223,11 +393,11 @@ Changed
 - GPU Memory is dedicated plus shared in use. No total is shown.
 - The GPU line shortens with ... if it would cover the title.
 - GPU numbers start after the window is shown, not during load.
-- Splash title is Portable AI Scanner Loading so the wrapper does
-  not treat the splash as the main window.
+- Splash title is Portable AI Scanner Loading so the starter does
+  not treat Loading as the main window.
 - vLLM under Python is at most 5 folders deep and needs
   site-packages\vllm\__init__.py. A folder named vllm alone is
-  leftover. pip and py are not used.
+  leftover. The pip or py command is not used.
 
 ==============================================================================
 1.6.3  (2026-09-25)
@@ -301,17 +471,11 @@ Changed
 - How to disable leftover line only for on-device model files, not
   Copilot protocol text.
 - text-generation-webui folder without a launcher is Not Installed.
-- Running comment matches App running vs Model loaded colors.
-- Local Ollama / LM Studio / llama.cpp ports are checked only if
-  that app looks installed.
+- Ollama, LM Studio, and llama.cpp local ports are checked only
+  if that app looks installed.
 - Check for update only opens release pages on this GitHub project.
-- Notepad settings copy uses a unique registry key and logs a
-  failed unload.
-
-Removed
-- Unused Test-BrowserHostOpen, GuiReady, and main
-  ModelNameIndexBuilt flag.
-- Unused Test-LocalPortOpen from the Windows 7 script.
+- Notepad settings copy is unloaded after the read. A failed
+  cleanup is written to the log.
 
 ==============================================================================
 1.6.0  (2026-09-20)
@@ -328,13 +492,13 @@ Changed
   Details lists them.
 - Splash stays up at least 700 ms so Loading is readable on a
   fast start.
-- Wrapper picks Windows 10/11 from the product name or build
+- Starter picks Windows 10/11 from the product name or build
   10240+, not version 6.1 first.
 - Model index uses depth 4, a file cap, and an 8 second budget
   per folder.
 - The list no longer jumps to every new row.
 - Local port check always closes the socket.
-- A load crash exits if the window was not created.
+- If the window never opens, the app exits.
 - Check for update only opens this project's GitHub release pages.
 - llama.cpp search under Downloads and Desktop is two folders
   deep.
@@ -342,20 +506,18 @@ Changed
 - Model index skips browser on-device model files outside the
   browser model folders.
 - Notepad and Paint with no stored AI switch are Unknown.
-- Scan-complete bar uses Green / Blue / Red.
+- Scan complete bar uses Green / Blue / Red.
 - Log.txt no longer writes User and Computer.
-- Windows 7: no unused download helper, an open port is not
-  Running, model index is GGUF/safetensors only with depth 4 /
-  20,000 / 8 s, no Internet Explorer row.
+- Windows 7: an open port is not Running, model index is GGUF and safetensors only (depth 4, 20,000
+  files, 8 seconds), no
+  Internet Explorer row.
 
 Fixed
-- Unused FindWindow import removed from the wrapper.
-- Windows app-list name match escapes dots before wildcards.
-- Check for update uses one repo setting for the GitHub call and
-  the allowed links.
-- Chrome Gemini version parse uses one variable.
-- Unused Aggressive switch removed from the model-family search.
-- Already-running script exits 2 so the wrapper log matches.
+- Apps-list names treat a dot as part of the name.
+- Check for update uses one project address for GitHub and the
+  allowed links.
+- Chrome Gemini version is read once.
+- An already-running start uses the same exit the starter expects.
 
 ==============================================================================
 1.5.9  (2026-09-20)
@@ -420,8 +582,8 @@ Changed
 - Local model file count reuses the model-folder index.
 
 Removed
-- Dev-only launchers Run_AI_Scanner.bat and Run_AI_Scanner.vbs
-  were never in a public ship set.
+- Helper launch files that were never in a public set were
+  dropped.
 
 ==============================================================================
 1.5.6  (2026-09-20)
@@ -513,7 +675,7 @@ Changed
   the exe or File Explorer.
 - An already-open command prompt stays open after the window
   closes.
-- Wrapper and both scripts use the same one-copy lock.
+- Starter and both scripts use the same one-copy lock.
 - Windows 7 window uses Scan / Rescan / Cancel, Detected, and
   Export list with the same hide rules.
 - Cancel stays visible after the first scan and is grayed out
@@ -527,7 +689,7 @@ Changed
 Added
 - AI_Scanner_Legacy.ps1 for Windows 7. Local apps, model files,
   running processes, and Apps-list checks only.
-- Wrapper chooses the script from the Windows version.
+- Starter chooses the script from the Windows version.
 - Other Windows versions show a not-compatible message and do
   not start either scanner.
 
@@ -562,9 +724,8 @@ Changed
 Fixed
 - Detected filter no longer errors on the list.
 - One CSV export path.
-- Foundry no longer stores a wildcard path as the executable.
-- Missing brace in the leftover-models scan that blocked the
-  wrapper.
+- Foundry no longer stores a wildcard as the program path.
+- Windows 7 leftover-models scan runs again.
 - Window controls are created before the window is shown.
 - Empty model-name index no longer logs size 0 for every family.
 
@@ -699,7 +860,7 @@ Added
   path, Grok desktop check.
 
 Changed
-- Local model disk scan limited to model-like files.
+- Local model disk scan is limited to model files.
 - Family name matches tightened.
 - App display name is Portable AI Scanner.
 
