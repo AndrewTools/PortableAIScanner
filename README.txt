@@ -15,7 +15,7 @@ You may not modify or republish it.
 You run it at your own risk. Windows may warn that the app is
 unsigned.
 
-Current version: 1.7.0 Build 0053
+Current version: 1.7.0 Build 0063
 
 
 What to put in the folder

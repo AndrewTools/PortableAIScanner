@@ -8,7 +8,7 @@
 
 $script:AppName = "Portable AI Scanner"
 $script:AppVersion = "1.7.0"
-$script:AppBuild = "0053"
+$script:AppBuild = "0063"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -1746,6 +1746,37 @@ function Get-FirstWeightsBin {
     return $null
 }
 
+function Get-OptGuideFolderDetail {
+    param([string[]]$UserDataRoots)
+    $emptyFolder = $false
+    $folderPresent = $false
+    $weightsPresent = $false
+    $weightsSize = $null
+    if ($UserDataRoots) {
+        foreach ($root in @($UserDataRoots)) {
+            if (-not $root) { continue }
+            foreach ($rel in @("OptGuideOnDeviceModel", "Default\OptGuideOnDeviceModel")) {
+                $modelBase = Join-Path $root $rel
+                if (-not (Test-Path -LiteralPath $modelBase)) { continue }
+                $anyFile = $null
+                try { $anyFile = Get-ChildItem -LiteralPath $modelBase -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1 } catch {}
+                if (-not $anyFile) { $emptyFolder = $true; continue }
+                $folderPresent = $true
+                $weights = Get-FirstWeightsBin -Root $modelBase
+                if ($weights -and $weights.Length -gt 50MB) {
+                    $weightsPresent = $true
+                    $weightsSize = [math]::Round($weights.Length / 1GB, 2)
+                }
+            }
+        }
+    }
+    if ($weightsPresent) { $detail = "weights.bin ~${weightsSize}GB on disk" }
+    elseif ($folderPresent) { $detail = "model files present (download may be incomplete)" }
+    elseif ($emptyFolder) { $detail = "model folder empty" }
+    else { $detail = "no model folder" }
+    return @{ Detail = $detail; HasFiles = $folderPresent; HasWeights = $weightsPresent }
+}
+
 function Scan-GeminiChrome {
     # Chrome: Gemini Nano cutoff 126. Settings > System > On-device AI.
     $r = New-Result "Google Chrome + Gemini"
@@ -1783,9 +1814,9 @@ function Scan-GeminiChrome {
     $signals = @()
     $weightsPresent = $false
     $folderPresent = $false
-    $userDisabled = $false
     $policyDisabled = $false
-    $settingsEnabled = $null  # $true / $false / $null unknown
+    $sawOn = $false
+    $sawOff = $false
     $localStateRead = $false
     $prefTruncated = $false
 
@@ -1822,81 +1853,59 @@ function Scan-GeminiChrome {
             $content = Get-PrefFileText $prefFile
             if ($null -eq $content) { continue }
             if ($script:LastPrefTruncated) { $prefTruncated = $true }
-            $localStateRead = $true
-            if ($content -match '"on_device_ai_user_settings_enabled"\s*:\s*true' -or $content -match '"OnDeviceAiUserSettingsEnabled"\s*:\s*true') {
-                $settingsEnabled = $true
-            } elseif ($settingsEnabled -ne $true) {
-                if ($content -match '"on_device_ai_user_settings_enabled"\s*:\s*false' -or $content -match '"OnDeviceAiUserSettingsEnabled"\s*:\s*false') {
-                    $userDisabled = $true
-                    $settingsEnabled = $false
-                }
+            $prefName = [IO.Path]::GetFileName([string]$prefFile)
+            if ($prefName -eq "Local State") { $localStateRead = $true }
+            # Real Local State key (Chromium):
+            # optimization_guide.on_device_foundational_model_user_settings
+            # Default is true. Older guessed names kept as extras.
+            if ($content -match '"on_device_foundational_model_user_settings"\s*:\s*true' -or
+                $content -match '"on_device_ai_user_settings_enabled"\s*:\s*true' -or
+                $content -match '"OnDeviceAiUserSettingsEnabled"\s*:\s*true') {
+                $sawOn = $true
             }
-            if ($content -match '"on_device_ai_user_settings_enabled"\s*:\s*false' -or $content -match '"OnDeviceAiUserSettingsEnabled"\s*:\s*false') {
-                $userDisabled = $true
-            }
-            # [^}] means "not a }". Do not delete that brace to balance { } counts.
-            if ($content -match '"model_execution"[^}]{0,200}"enabled"\s*:\s*false') {
-                $userDisabled = $true
+            if ($content -match '"on_device_foundational_model_user_settings"\s*:\s*false' -or
+                $content -match '"on_device_ai_user_settings_enabled"\s*:\s*false' -or
+                $content -match '"OnDeviceAiUserSettingsEnabled"\s*:\s*false') {
+                $sawOff = $true
             }
         } catch {}
         $content = $null
     }
 
-    $modelBases = @()
-    foreach ($root in $chromeDataRoots) {
-        $modelBases += (Join-Path $root "OptGuideOnDeviceModel")
-        $modelBases += (Join-Path $root "Default\OptGuideOnDeviceModel")
-    }
-    foreach ($modelBase in $modelBases) {
-        if (-not (Test-Path $modelBase)) { continue }
-        $folderPresent = $true
-        $weights = Get-FirstWeightsBin -Root $modelBase
-        if ($weights -and $weights.Length -gt 50MB) {
-            $weightsPresent = $true
-            $sizeGB = [math]::Round($weights.Length / 1GB, 2)
-            $signals += "weights.bin ~${sizeGB}GB still on disk"
-            break
-        } else {
-            $signals += "OptGuideOnDeviceModel folder (no large weights.bin)"
-        }
-    }
+    $guide = Get-OptGuideFolderDetail $chromeDataRoots
+    $modelDetail = [string]$guide.Detail
+    $folderPresent = [bool]$guide.HasFiles
+    $weightsPresent = [bool]$guide.HasWeights
 
-    # --- Decision (setting/policy win over residual files) ---
+    # Status follows the Settings switch. Folder only changes Details.
+    # Missing key: Chrome default is on.
     if ($policyDisabled) {
         Set-ScanStatus $r "Deactivated" "Blocked by policy"
-        $r.Details += " | AI off"
-        if ($weightsPresent) {
-            $r.Details += " | Residual model files"
-            $r.DisableHint = ""
-        }
-    } elseif ($settingsEnabled -eq $true) {
-        Set-ScanStatus $r "Activated" "Enabled in Settings"
-        $r.Details += " | AI on"
-    } elseif ($userDisabled -or $settingsEnabled -eq $false) {
+        $r.Details += " | AI off | $modelDetail"
+        if ($folderPresent -or $weightsPresent) { $r.DisableHint = "" }
+    } elseif ($sawOn) {
+        Set-ScanStatus $r "Activated" "On-device AI on in Settings"
+        $r.Details += " | AI on | $modelDetail"
+        if ($sawOff) { $r.Details += " | on in at least one profile" }
+    } elseif ($sawOff) {
         Set-ScanStatus $r "Deactivated" "On-device AI off in Settings"
-        $r.Details += " | AI off"
-        if ($weightsPresent) {
-            Set-ScanStatus $r "Deactivated" "Setting OFF; residual weights still on disk"
-            $r.Details += " | Residual model files"
-            $r.DisableHint = ""
-        }
-    } elseif ($weightsPresent -and $settingsEnabled -ne $false) {
-        # Real activation: large model present and setting not off
-        Set-ScanStatus $r "Activated" "On-device model on disk"
-        $r.Details += " | AI on"
+        $r.Details += " | AI off | $modelDetail"
+        if ($folderPresent -or $weightsPresent) { $r.DisableHint = "" }
+    } elseif ($localStateRead -and -not $prefTruncated) {
+        Set-ScanStatus $r "Activated" "On-device AI on in Settings"
+        $r.Details += " | AI on | $modelDetail"
     } elseif (-not $localStateRead) {
         $r.DisableHint = ""
         Set-ScanStatus $r "Unknown" "Could not read Chrome Local State"
-        $r.Details += " | Could not read settings"
-    } elseif ($prefTruncated -and $settingsEnabled -eq $null) {
+        $r.Details += " | Could not read settings | $modelDetail"
+    } elseif ($prefTruncated -and -not $sawOn -and -not $sawOff) {
         $r.DisableHint = ""
         Set-ScanStatus $r "Unknown" "Chrome settings file was too large to read fully"
-        $r.Details += " | Could not read settings"
+        $r.Details += " | Could not read settings | $modelDetail"
     } else {
         $r.DisableHint = ""
-        Set-ScanStatus $r "Deactivated" "On-device AI not enabled (no on setting, no large model)"
-        $r.Details += " | AI off"
-        if ($folderPresent) { $r.Details += " | Residual model files" }
+        Set-ScanStatus $r "Deactivated" "On-device AI off"
+        $r.Details += " | AI off | $modelDetail"
     }
     $content = $null
     return $r
@@ -2463,10 +2472,12 @@ function Scan-EdgeCopilot {
             if ($pr -match '"copilot_page"\s*:\s*false' -or $pr -match '"show_copilot"\s*:\s*false') {
                 $disabled = $true
             }
-            if ($pr -match '"on_device_ai_user_settings_enabled"\s*:\s*false') {
+            if ($pr -match '"on_device_foundational_model_user_settings"\s*:\s*false' -or
+                $pr -match '"on_device_ai_user_settings_enabled"\s*:\s*false') {
                 $modelDisabled = $true
                 $localStateRead = $true
-            } elseif ($pr -match '"on_device_ai_user_settings_enabled"\s*:\s*true') {
+            } elseif ($pr -match '"on_device_foundational_model_user_settings"\s*:\s*true' -or
+                      $pr -match '"on_device_ai_user_settings_enabled"\s*:\s*true') {
                 $onDeviceSettingOn = $true
                 $localStateRead = $true
             }
@@ -2475,7 +2486,6 @@ function Scan-EdgeCopilot {
     }
 
     if ($null -eq $modelDisabled) { $modelDisabled = $false }
-    if ($null -eq $onDeviceSettingOn) { $onDeviceSettingOn = $false }
     foreach ($p in @(
         "HKLM:\SOFTWARE\Policies\Microsoft\Edge",
         "HKCU:\SOFTWARE\Policies\Microsoft\Edge",
@@ -2490,61 +2500,32 @@ function Scan-EdgeCopilot {
         } catch {}
     }
 
-    $weightsPresent = $false
-    $modelBases = @()
-    foreach ($root in @($edgeDataRoots)) {
-        $modelBases += (Join-Path $root "OptGuideOnDeviceModel")
-        $modelBases += (Join-Path $root "Default\OptGuideOnDeviceModel")
-    }
-    $folderPresent = $false
-    foreach ($modelBase in $modelBases) {
-        if (-not (Test-Path $modelBase)) { continue }
-        $folderPresent = $true
-        $weights = Get-FirstWeightsBin -Root $modelBase
-        if ($weights -and $weights.Length -gt 50MB) {
-            $weightsPresent = $true
-            $sizeGB = [math]::Round($weights.Length / 1GB, 2)
-            $activatedHints += "weights.bin ~${sizeGB}GB on disk"
-            break
-        }
-    }
-    if ($folderPresent -and -not $weightsPresent) {
-        $activatedHints += "OptGuide folder only; no large weights.bin"
-    }
-
+    $guide = Get-OptGuideFolderDetail $edgeDataRoots
+    $modelDetail = [string]$guide.Detail
+    $onDeviceOn = ($onDeviceSettingOn -eq $true)
     $settingsOff = ($disabled -or $modelDisabled)
-    $settingsOn = ($sidebarOn -or $onDeviceSettingOn)
+    $settingsOn = ($sidebarOn -or $onDeviceOn)
     $settingsRead = $prefsRead -or $localStateRead
-    $policyKnown = $disabled -or $modelDisabled -or $sidebarOn
+    $sideTxt = $(if ($sidebarOn) { "Copilot sidebar on" } elseif ($disabled) { "Copilot sidebar off" } else { "Copilot sidebar unknown" })
 
     if ($settingsOn) {
-        if ($weightsPresent) {
-            Set-ScanStatus $r "Activated" "AI on in settings; on-device model on disk"
-        } else {
-            Set-ScanStatus $r "Activated" "AI on in settings; no large weights.bin on disk"
-        }
-        $r.Details += " | AI on"
+        Set-ScanStatus $r "Activated" "AI on in Settings"
+        $r.Details += " | AI on | $sideTxt | $modelDetail"
     } elseif ($settingsOff) {
         Set-ScanStatus $r "Deactivated" "Sidebar or on-device AI turned off"
-        $r.Details += " | AI off"
-        if ($weightsPresent -or $folderPresent) {
-            $r.Details += " | Residual model files"
-            $r.DisableHint = ""
-        }
-    } elseif ($weightsPresent) {
-        Set-ScanStatus $r "Activated" "On-device model on disk"
-        $r.Details += " | AI on"
-    } elseif (-not $settingsRead -and -not $policyKnown) {
+        $r.Details += " | AI off | $sideTxt | $modelDetail"
+        if ($guide.HasFiles -or $guide.HasWeights) { $r.DisableHint = "" }
+    } elseif (-not $settingsRead) {
         Set-ScanStatus $r "Unknown" "Could not read Edge Local State or Preferences"
         $r.DisableHint = ""
-        $r.Details += " | Could not read settings"
+        $r.Details += " | Could not read settings | $modelDetail"
     } elseif ($prefTruncated -and -not $settingsOn -and -not $settingsOff) {
         Set-ScanStatus $r "Unknown" "Edge settings file was too large to read fully"
         $r.DisableHint = ""
-        $r.Details += " | Could not read settings"
+        $r.Details += " | Could not read settings | $modelDetail"
     } else {
         Set-ScanStatus $r "Deactivated" "Edge present; Copilot / on-device AI not enabled"
-        $r.Details += " | AI off"
+        $r.Details += " | AI off | $sideTxt | $modelDetail"
     }
     return $r
 }
@@ -2951,14 +2932,24 @@ function Scan-OperaAI {
         } catch {}
         $content = $null
     }
+    $operaRoots = @(
+        "$env:APPDATA\Opera Software\Opera Stable",
+        "$env:APPDATA\Opera Software\Opera GX Stable",
+        "$env:LOCALAPPDATA\Opera Software\Opera Stable"
+    )
+    $guide = Get-OptGuideFolderDetail $operaRoots
+    $modelDetail = [string]$guide.Detail
     if ($anyOn) {
         Set-ScanStatus $r "Activated" "Aria on in Preferences"
-        $r.Details += " | AI on"
+        $r.Details += " | AI on | $modelDetail"
+        if ($anyOff) { $r.Details += " | on in at least one profile" }
     } elseif ($anyOff) {
         Set-ScanStatus $r "Deactivated" "Aria off in Preferences"
-        $r.Details += " | AI off"
+        $r.Details += " | AI off | $modelDetail"
     } elseif ($prefsRead -and $r.Activated -eq "Unknown") {
-        $r.Details += " | Could not read settings"
+        $r.Details += " | AI on/off key not stored | $modelDetail"
+    } else {
+        $r.Details += " | $modelDetail"
     }
     return $r
 }
@@ -3039,14 +3030,19 @@ function Scan-BraveLeo {
         } catch {}
         $content = $null
     }
+    $guide = Get-OptGuideFolderDetail $braveRoots
+    $modelDetail = [string]$guide.Detail
     if ($anyOn) {
         Set-ScanStatus $r "Activated" "Leo on in Preferences"
-        $r.Details += " | AI on"
+        $r.Details += " | AI on | $modelDetail"
+        if ($anyOff) { $r.Details += " | on in at least one profile" }
     } elseif ($anyOff) {
         Set-ScanStatus $r "Deactivated" "Leo off in Preferences"
-        $r.Details += " | AI off"
+        $r.Details += " | AI off | $modelDetail"
     } elseif ($prefsRead -and $r.Activated -eq "Unknown") {
-        $r.Details += " | Could not read settings"
+        $r.Details += " | AI on/off key not stored | $modelDetail"
+    } else {
+        $r.Details += " | $modelDetail"
     }
     return $r
 }
@@ -3097,15 +3093,20 @@ function Scan-Comet {
         } catch {}
         $pr = $null
     }
+    $guide = Get-OptGuideFolderDetail $cometRoots
+    $modelDetail = [string]$guide.Detail
     if ($anyOn) {
         Set-ScanStatus $r "Activated" "AI setting on in Comet preferences"
-        $r.Details += " | AI on"
+        $r.Details += " | AI on | $modelDetail"
+        if ($anyOff) { $r.Details += " | on in at least one profile" }
     } elseif ($anyOff) {
         Set-ScanStatus $r "Deactivated" "AI setting off in Comet preferences"
-        $r.Details += " | AI off"
+        $r.Details += " | AI off | $modelDetail"
     } elseif ($prefsRead) {
         Set-ScanStatus $r "Unknown" "Preferences read; AI on/off key not stored"
-        $r.Details += " | Could not read settings"
+        $r.Details += " | AI on/off key not stored | $modelDetail"
+    } else {
+        $r.Details += " | $modelDetail"
     }
     return $r
 }
@@ -4984,6 +4985,7 @@ function Add-SectionHeaderToListView {
     $item.Font = New-Object System.Drawing.Font($ListView.Font, [System.Drawing.FontStyle]::Bold)
     $item.Tag = "section"
     Add-ListViewItemSafe -ListView $ListView -Item $item
+    Add-ToLvCache $item
     if (-not $script:SkipListLayout) {
         Update-TrackedNameDisableWidth -ListView $ListView -NameText $Title -DisableText ""
     }
@@ -5040,6 +5042,7 @@ function Add-ResultToListView {
         $item.ForeColor = [System.Drawing.Color]::Gray
     }
     Add-ListViewItemSafe -ListView $ListView -Item $item
+    Add-ToLvCache $item
 }
 
 function Set-ListViewItemAppearance {
@@ -5071,11 +5074,24 @@ function Update-LiveListViewRows {
     if (-not $ListView) { return }
     $ListView.BeginUpdate()
     try {
-        foreach ($it in $ListView.Items) {
-            if ($it.Tag -eq "section") { continue }
-            $r = $it.Tag
-            if (-not $r) { continue }
-            Set-ListViewItemAppearance -Item $it -r $r
+        $src = $script:LvCache
+        if ($src -and $src.Count -gt 0) {
+            foreach ($it in $src) {
+                if (-not $it -or $it.Tag -eq "section") { continue }
+                $r = $it.Tag
+                if (-not $r) { continue }
+                Set-ListViewItemAppearance -Item $it -r $r
+            }
+        } else {
+            $n = 0
+            try { $n = $ListView.Items.Count } catch { $n = 0 }
+            for ($i = 0; $i -lt $n; $i++) {
+                $it = Get-ListViewItemAt $ListView $i
+                if (-not $it -or $it.Tag -eq "section") { continue }
+                $r = $it.Tag
+                if (-not $r) { continue }
+                Set-ListViewItemAppearance -Item $it -r $r
+            }
         }
     } finally {
         try { $ListView.EndUpdate() } catch {}
@@ -5180,6 +5196,26 @@ function Stop-ScanListHold {
     try { $lv.Invalidate() } catch {}
 }
 
+function New-LvCache {
+    $script:LvCache = New-Object System.Collections.Generic.List[System.Windows.Forms.ListViewItem]
+}
+
+function Add-ToLvCache {
+    param($Item)
+    if (-not $Item) { return }
+    if (-not $script:LvCache) { New-LvCache }
+    [void]$script:LvCache.Add($Item)
+}
+
+function Get-ListViewItemAt {
+    param($ListView, [int]$Index)
+    if (-not $ListView) { return $null }
+    try {
+        if ($Index -lt 0 -or $Index -ge $ListView.Items.Count) { return $null }
+        return $ListView.Items[$Index]
+    } catch { return $null }
+}
+
 function Test-RowIsDetected {
     param($r)
     if (-not $r) { return $false }
@@ -5245,6 +5281,7 @@ function Show-ScanRows {
     $ListView.BeginUpdate()
     try {
         $ListView.Items.Clear()
+        New-LvCache
         $pendingHeader = $null
         foreach ($row in @($script:ScanRows)) {
             if ($row.Kind -eq "section") {
@@ -5265,18 +5302,20 @@ function Show-ScanRows {
     }
     if (-not $Fast) {
         Resize-NameAndDisableColumns -ListView $ListView
-        if (-not $script:FilterDetected -and $ListView.Items.Count -gt 0) {
-            $script:LvCache = New-Object System.Collections.Generic.List[System.Windows.Forms.ListViewItem]
-            foreach ($it in $ListView.Items) { [void]$script:LvCache.Add($it) }
+        if (-not $script:FilterDetected -and $ListView.Items.Count -gt 0 -and (-not $script:LvCache -or $script:LvCache.Count -lt 1)) {
+            Save-ListViewCache -ListView $ListView
         }
     }
 }
 
 function Save-ListViewCache {
     param($ListView)
-    $script:LvCache = New-Object System.Collections.Generic.List[System.Windows.Forms.ListViewItem]
+    New-LvCache
     if (-not $ListView) { return }
-    foreach ($it in @($ListView.Items)) {
+    $n = 0
+    try { $n = $ListView.Items.Count } catch { return }
+    for ($i = 0; $i -lt $n; $i++) {
+        $it = Get-ListViewItemAt $ListView $i
         if ($it) { [void]$script:LvCache.Add($it) }
     }
 }
@@ -5908,7 +5947,7 @@ function Complete-AiScan {
                 [void](Set-RunningAndStatus $rr $modelRun)
             }
             $liveCount = 0
-            try { $liveCount = @($lv.Items).Count } catch {}
+            try { $liveCount = $lv.Items.Count } catch {}
             if ($liveCount -gt 0) {
                 Update-LiveListViewRows -ListView $lv
             } else {
@@ -5933,18 +5972,25 @@ function Complete-AiScan {
                 }).Count
                 $script:SkipListLayout = $false
                 if ($lv) {
-                    foreach ($it in $lv.Items) {
-                        $nm = ""
-                        $ds = ""
-                        try { if ($it.SubItems.Count -gt 0) { $nm = [string]$it.SubItems[0].Text } } catch {}
-                        try { if ($it.SubItems.Count -gt 6) { $ds = [string]$it.SubItems[6].Text } } catch {}
-                        Update-TrackedNameDisableWidth -ListView $lv -NameText $nm -DisableText $ds
+                    $widthSrc = $script:LvCache
+                    if (-not $widthSrc -or $widthSrc.Count -lt 1) {
+                        Save-ListViewCache -ListView $lv
+                        $widthSrc = $script:LvCache
+                    }
+                    if ($widthSrc) {
+                        foreach ($it in $widthSrc) {
+                            if (-not $it) { continue }
+                            $nm = ""
+                            $ds = ""
+                            try { if ($it.SubItems.Count -gt 0) { $nm = [string]$it.SubItems[0].Text } } catch {}
+                            try { if ($it.SubItems.Count -gt 6) { $ds = [string]$it.SubItems[6].Text } } catch {}
+                            Update-TrackedNameDisableWidth -ListView $lv -NameText $nm -DisableText $ds
+                        }
                     }
                 }
                 Resize-NameAndDisableColumns -ListView $lv
                 if (-not $script:LvCache -or $script:LvCache.Count -lt 1) {
-                    $script:LvCache = New-Object System.Collections.Generic.List[System.Windows.Forms.ListViewItem]
-                    foreach ($it in $lv.Items) { [void]$script:LvCache.Add($it) }
+                    Save-ListViewCache -ListView $lv
                 }
                 if ($scanWatch) { try { $scanWatch.Stop() } catch {} }
                 $sec = if ($scanWatch) { [Math]::Round($scanWatch.Elapsed.TotalSeconds, 1) } else { 0 }
@@ -6230,7 +6276,7 @@ function Start-AiScanSession {
     $script:HasScanResults = $false
     $script:FilterDetected = $false
     $script:FilterBusy = $false
-    $script:LvCache = $null
+    New-LvCache
     $script:ColWidth0 = 0
     $script:ColWidth6 = 0
     if ($script:ColMeasureGraphics) {

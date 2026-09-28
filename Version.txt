@@ -6,19 +6,21 @@ Newest version is at the top.
 ==============================================================================
 1.7.0  (2026-09-27)
 ==============================================================================
-Build: 0053
+Build: 0063
 
 Added
 - Scan runs one step at a time so Cancel and close can paint.
 - Windows app list and model-file walk run in the background.
 
 Changed
-- Detected uses a saved list. It does not copy every row on
-  each click. Off puts the full list back.
+- Detected uses a saved list built while rows are added. It
+  does not walk the on-screen list on each click. Off puts
+  the full list back. A full list rebuild starts a new saved
+  list so Detected cannot show a row twice.
 - Close stops the background walk, waits a short moment, then
   always closes it.
-- Local model checks stay on this PC (127.0.0.1, localhost,
-  or ::1). They do not use the system proxy.
+- Local model checks stay on this PC. They do not use the
+  system proxy.
 - ChatGPT, Grok, Ollama, Perplexity, and LM Studio Running is
   Yes only if the process path looks like that app.
 - A failed scan step stops that check and shows Scanner Error.
@@ -36,15 +38,14 @@ Changed
   Cancel and Export.
 - Firefox install also uses the Apps list location.
   Thunderbird is skipped.
-- One-copy lock is always taken. Starting the .ps1 while the
-  exe is open asks you to close the first window. Starting
-  from the exe is not treated as a second copy.
+- Only one scanner window can run. Starting the script while
+  that window is open asks you to close the first one.
+  Starting from the exe is not treated as a second copy.
 - Windows 7 first exe start is not treated as already running.
 - ollama, foundry, llama-server, and open-webui count as
   installed only if the command path looks like that app.
-- text-generation-webui needs webui.py, server.py, one_click.py,
-  start_windows.bat, start_wsl.bat, or oobabooga.exe. python.exe
-  alone is not enough.
+- text-generation-webui needs one of its usual start files.
+  Python alone is not enough.
 - Microsoft 365 Copilot Running is Yes only if the process
   path looks like that Copilot app. Word, Excel, PowerPoint,
   Outlook, OneNote, and Windows Copilot do not count.
@@ -55,12 +56,13 @@ Changed
   Yes if that browser is open, even when Installed is No.
   Status is Unknown. Installed stays No.
 - Firefox AI policy is read from current-user and machine policy.
-- Firefox newer than 157 with no pref lines is Unknown, not
-  Deactivated.
-- Firefox 148-157 with a readable profile and no pref lines
-  is Activated.
-- Firefox 130-147 with no pref lines follows that version
-  default (off unless that version listed a feature on).
+- Firefox newer than 157 with no AI settings stored is
+  Unknown, not Deactivated.
+- Firefox 148-157 with a readable profile and no AI settings
+  stored is Activated.
+- Firefox 130-147 with no AI settings stored follows that
+  version default (off unless that version listed a feature
+  on).
 - Firefox 136 disable text uses sidebar / Browser Layout,
   not Labs.
 - Firefox 141 disable text does not claim a Settings page
@@ -72,11 +74,25 @@ Changed
   rows.
 - Notepad with no stored switch is Activated unless policy
   turns it off.
+- Chrome On-device AI follows the Settings switch. If the
+  switch is missing, Chrome treats it as on. Details only
+  report the model folder (none, empty, incomplete, or
+  model file size). Running Yes plus Activated is Red.
+- Edge is Activated if Copilot sidebar is on or On-device AI
+  is on in Settings. A missing On-device AI switch is not
+  treated as on.
+- Opera, Brave, and Comet Details include the on-device
+  model folder. Status still follows that browser's AI
+  switch. If the switch is missing, Details say AI on/off
+  key not stored.
+- If one profile has AI on and another off, Status is
+  Activated and Details say on in at least one profile.
 
 Fixed
-- Firefox 148 with empty prefs is not treated as Block.
-- Firefox 149-157 with empty prefs is not Unknown only
-  because 148 was the last listed version.
+- Firefox 148 with no AI settings stored is not treated as
+  Block.
+- Firefox 149-157 with no AI settings stored is not Unknown
+  only because 148 was the last listed version.
 - Detected on and off reuses the same rows, adds them in one
   batch, and ignores extra clicks while busy.
 - Detected no longer hangs a few seconds on first click.
