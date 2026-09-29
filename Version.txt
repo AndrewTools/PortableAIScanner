@@ -4,6 +4,35 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
+1.7.1  (2026-09-28)
+==============================================================================
+Build: 0070
+
+Added
+- GPU utilization and memory are read in the background. Scan and
+  Detected no longer wait on those Windows counters.
+- Check for update runs in the background. The window stays usable
+  while it waits for GitHub.
+
+Changed
+- llama.cpp search under Downloads and Desktop stops after 8 seconds
+  or 500 items in a folder.
+- AnythingLLM, Windsurf, and Msty Running is Yes only if the process
+  path looks like that app.
+- GPT4All Running on Windows 10/11 is Yes only if the process path
+  looks like GPT4All.
+- Windows 7 GPT4All Running allows chat.exe only when the path looks
+  like GPT4All. A random Chat process does not count.
+- llama.cpp, Llamafile, LocalAI, and KoboldCPP Running is Yes only if
+  the process path looks like that app.
+
+Fixed
+- GPU background start no longer skips a new query when the last one
+  already finished.
+- Unused GitHub latest-release helper removed. Check for update uses
+  the background fetch only.
+
+==============================================================================
 1.7.0  (2026-09-27)
 ==============================================================================
 Build: 0063

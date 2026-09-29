@@ -3,7 +3,7 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.7.0"
+$script:AppVersion = "1.7.1"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
@@ -269,11 +269,40 @@ function Get-UninstallHits {
     return $hits
 }
 
+function Get-LegacyProcessPath {
+    param($Process)
+    if (-not $Process) { return "" }
+    try {
+        $pp = [string]$Process.Path
+        if ($pp) { return $pp }
+    } catch {}
+    $id = 0
+    try { $id = [int]$Process.Id } catch { return "" }
+    if ($id -le 0) { return "" }
+    try {
+        $w = Get-WmiObject Win32_Process -Filter ("ProcessId=" + $id) -ErrorAction Stop
+        if ($w.ExecutablePath) { return [string]$w.ExecutablePath }
+        if ($w.CommandLine) { return [string]$w.CommandLine }
+    } catch {}
+    return ""
+}
+
 function Test-ProcessRunning {
-    param([string[]]$Names)
+    param(
+        [string[]]$Names,
+        [string[]]$PathLike = $null
+    )
     foreach ($n in $Names) {
-        $proc = Get-Process -Name $n -ErrorAction SilentlyContinue
-        if ($proc) { return $true }
+        $proc = @(Get-Process -Name $n -ErrorAction SilentlyContinue)
+        if (-not $proc) { continue }
+        if (-not $PathLike -or @($PathLike).Count -eq 0) { return $true }
+        foreach ($pr in $proc) {
+            $pp = Get-LegacyProcessPath $pr
+            if (-not $pp) { continue }
+            foreach ($pat in @($PathLike)) {
+                if ($pat -and $pp -match $pat) { return $true }
+            }
+        }
     }
     return $false
 }
@@ -288,10 +317,12 @@ function Scan-ByExeOrUninstall {
         [string]$Name,
         [string[]]$Exes,
         [string[]]$UninstallPatterns,
-        [string[]]$ProcessNames
+        [string[]]$ProcessNames,
+        [string[]]$ProcessPathLike = $null
     )
     $r = New-Result $Name
     $r.ProcessNames = @($ProcessNames)
+    $r | Add-Member NoteProperty ProcessPathLike @($ProcessPathLike) -Force
     $exe = Test-PathAny $Exes
     $un = @()
     if ($UninstallPatterns) { $un = @(Get-UninstallHits $UninstallPatterns) }
@@ -315,7 +346,7 @@ function Scan-ByExeOrUninstall {
     }
 
     $running = $false
-    if ($ProcessNames -and (Test-ProcessRunning $ProcessNames)) { $running = $true }
+    if ($ProcessNames -and (Test-ProcessRunning -Names $ProcessNames -PathLike $ProcessPathLike)) { $running = $true }
     if ($running -and $r.Installed) { $r.Running = "Yes" }
     return $r
 }
@@ -710,7 +741,11 @@ $btnScan.Add_Click({
             Scan-ByExeOrUninstall -Name "GPT4All" -Exes @(
                 "$env:LOCALAPPDATA\Programs\GPT4All\bin\chat.exe",
                 "$env:LOCALAPPDATA\nomic.ai\GPT4All\bin\chat.exe"
-            ) -UninstallPatterns @("GPT4All*") -ProcessNames @("gpt4all")
+            ) -UninstallPatterns @("GPT4All*") -ProcessNames @("gpt4all","GPT4All","chat") -ProcessPathLike @(
+                '(?i)\\GPT4All\\',
+                '(?i)\\gpt4all\\',
+                '(?i)nomic\.ai\\GPT4All'
+            )
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "Jan" -Exes @(
@@ -721,20 +756,31 @@ $btnScan.Add_Click({
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "KoboldCPP" -Exes @(
                 "$env:USERPROFILE\koboldcpp\koboldcpp.exe"
-            ) -UninstallPatterns @("KoboldCPP*","koboldcpp*") -ProcessNames @("koboldcpp")
+            ) -UninstallPatterns @("KoboldCPP*","koboldcpp*") -ProcessNames @("koboldcpp") -ProcessPathLike @(
+                '(?i)\\[Kk]oboldcpp\\',
+                '(?i)koboldcpp.*\.exe$'
+            )
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "llama.cpp" -Exes @(
                 "$env:USERPROFILE\llama.cpp\llama-server.exe",
                 "$env:USERPROFILE\llama.cpp\llama-cli.exe"
-            ) -UninstallPatterns @("llama.cpp*") -ProcessNames @("llama-server","llama-cli")
+            ) -UninstallPatterns @("llama.cpp*") -ProcessNames @("llama-server","llama-cli") -ProcessPathLike @(
+                '(?i)\\llama\.cpp\\',
+                '(?i)\\llamacpp\\',
+                '(?i)llama-server\.exe$',
+                '(?i)llama-cli\.exe$'
+            )
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "Llamafile" -Exes @(
                 "$env:LOCALAPPDATA\Programs\llamafile\llamafile.exe",
                 "$env:USERPROFILE\llamafile\llamafile.exe",
                 "${env:ProgramFiles}\llamafile\llamafile.exe"
-            ) -UninstallPatterns @("Llamafile*","llamafile*") -ProcessNames @("llamafile")
+            ) -UninstallPatterns @("Llamafile*","llamafile*") -ProcessNames @("llamafile") -ProcessPathLike @(
+                '(?i)\\llamafile\\',
+                '(?i)llamafile\.exe$'
+            )
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "LM Studio" -Exes @(
@@ -750,7 +796,12 @@ $btnScan.Add_Click({
                 "$env:LOCALAPPDATA\Programs\LocalAI\localai.exe",
                 "${env:ProgramFiles}\LocalAI\local-ai.exe",
                 "${env:ProgramFiles}\LocalAI\localai.exe"
-            ) -UninstallPatterns @("LocalAI*","Local AI*","local-ai*") -ProcessNames @("local-ai","localai")
+            ) -UninstallPatterns @("LocalAI*","Local AI*","local-ai*") -ProcessNames @("local-ai","localai") -ProcessPathLike @(
+                '(?i)\\LocalAI\\',
+                '(?i)\\local-ai\\',
+                '(?i)local-ai\.exe$',
+                '(?i)localai\.exe$'
+            )
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "Msty" -Exes @(
@@ -789,7 +840,9 @@ $btnScan.Add_Click({
         if ($row.Kind -ne "row") { continue }
         $rr = $row.R
         if ($rr.Installed -and $rr.ProcessNames -and @($rr.ProcessNames).Count -gt 0) {
-            if (Test-ProcessRunning $rr.ProcessNames) { $rr.Running = "Yes" } else { $rr.Running = "No" }
+            $like = $null
+            try { $like = @($rr.ProcessPathLike) } catch { $like = $null }
+            if (Test-ProcessRunning -Names $rr.ProcessNames -PathLike $like) { $rr.Running = "Yes" } else { $rr.Running = "No" }
         }
     }
     $lv.Items.Clear()

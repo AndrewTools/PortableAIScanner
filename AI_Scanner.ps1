@@ -7,8 +7,8 @@
 # That is not a missing function closer. Count braces outside strings.
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.7.0"
-$script:AppBuild = "0063"
+$script:AppVersion = "1.7.1"
+$script:AppBuild = "0070"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -1119,7 +1119,7 @@ function Test-ProductProcessOpen {
         "Open WebUI*" { $patterns = @() }
         default { $patterns = @() }
     }
-    $needPath = ($Name -like "Jan*" -or $Name -like "Claude*" -or $Name -like "Foundry Local*" -or $Name -like "ComfyUI*" -or $Name -like "Cursor*" -or $Name -eq "Copilot (Microsoft)" -or $Name -like "Microsoft 365 Copilot*" -or $Name -like "ChatRTX*" -or $Name -like "ChatGPT*" -or $Name -like "Grok*" -or $Name -like "Ollama*" -or $Name -eq "Perplexity" -or $Name -like "LM Studio*")
+    $needPath = ($Name -like "Jan*" -or $Name -like "Claude*" -or $Name -like "Foundry Local*" -or $Name -like "ComfyUI*" -or $Name -like "Cursor*" -or $Name -eq "Copilot (Microsoft)" -or $Name -like "Microsoft 365 Copilot*" -or $Name -like "ChatRTX*" -or $Name -like "ChatGPT*" -or $Name -like "Grok*" -or $Name -like "Ollama*" -or $Name -eq "Perplexity" -or $Name -like "LM Studio*" -or $Name -like "AnythingLLM*" -or $Name -like "Windsurf*" -or $Name -like "Msty*" -or $Name -like "GPT4All*" -or $Name -like "llama.cpp*" -or $Name -like "Llamafile*" -or $Name -like "LocalAI*" -or $Name -like "KoboldCPP*")
     foreach ($pat in $patterns) {
         if (-not $pat) { continue }
         try {
@@ -1206,6 +1206,22 @@ function Test-ProcessPathMatchesProduct {
             if ($pp -match '(?i)\\Perplexity\\Perplexity\.exe$' -or $pp -match '(?i)\\Perplexity\\') { return $true }
         } elseif ($Name -like "LM Studio*") {
             if ($pp -match '(?i)LM Studio\.exe$' -or $pp -match '(?i)\\LM[- ]Studio\\') { return $true }
+        } elseif ($Name -like "AnythingLLM*") {
+            if ($pp -match '(?i)\\AnythingLLM\\' -or $pp -match '(?i)AnythingLLM\.exe$' -or $pp -match '(?i)anythingllm-desktop') { return $true }
+        } elseif ($Name -like "Windsurf*") {
+            if ($pp -match '(?i)\\Windsurf\\Windsurf\.exe$' -or $pp -match '(?i)\\Programs\\Windsurf\\') { return $true }
+        } elseif ($Name -like "Msty*") {
+            if ($pp -match '(?i)\\Msty\\Msty\.exe$' -or $pp -match '(?i)\\Programs\\[Mm]sty\\') { return $true }
+        } elseif ($Name -like "GPT4All*") {
+            if ($pp -match '(?i)\\GPT4All\\' -or $pp -match '(?i)\\gpt4all\\' -or $pp -match '(?i)nomic\.ai\\GPT4All' -or $pp -match '(?i)gpt4all\.exe$') { return $true }
+        } elseif ($Name -like "llama.cpp*") {
+            if ($pp -match '(?i)\\llama\.cpp\\' -or $pp -match '(?i)\\llamacpp\\' -or $pp -match '(?i)llama-server\.exe$' -or $pp -match '(?i)llama-cli\.exe$') { return $true }
+        } elseif ($Name -like "Llamafile*") {
+            if ($pp -match '(?i)\\llamafile\\' -or $pp -match '(?i)llamafile\.exe$' -or $pp -match '(?i)\.llamafile$') { return $true }
+        } elseif ($Name -like "LocalAI*") {
+            if ($pp -match '(?i)\\LocalAI\\' -or $pp -match '(?i)\\local-ai\\' -or $pp -match '(?i)local-ai\.exe$' -or $pp -match '(?i)localai\.exe$') { return $true }
+        } elseif ($Name -like "KoboldCPP*") {
+            if ($pp -match '(?i)\\[Kk]oboldcpp\\' -or $pp -match '(?i)koboldcpp.*\.exe$') { return $true }
         }
     }
     return $false
@@ -4355,11 +4371,40 @@ function Scan-LlamaCpp {
     )
     $foundExe = Test-PathAny $exes
     if (-not $foundExe) {
+        $want = @("llama-server.exe","llama-cli.exe","llama-bench.exe")
+        $walkWatch = [System.Diagnostics.Stopwatch]::StartNew()
         foreach ($dir in @("$env:USERPROFILE\Downloads", "$env:USERPROFILE\Desktop", "$env:USERPROFILE\llama.cpp", "$env:USERPROFILE\llamacpp")) {
             if (Test-ScanCanceled) { break }
-            if (-not (Test-Path $dir)) { continue }
-            $hit = Get-ChildItem $dir -Recurse -Depth 2 -Include "llama-server.exe","llama-cli.exe","llama-bench.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($hit) { $foundExe = $hit.FullName; break }
+            if ($walkWatch.ElapsedMilliseconds -gt 8000) { break }
+            if (-not (Test-Path -LiteralPath $dir)) { continue }
+            $q = New-Object System.Collections.Queue
+            $q.Enqueue(@($dir, 0))
+            while ($q.Count -gt 0) {
+                if (Test-ScanCanceled) { break }
+                if ($walkWatch.ElapsedMilliseconds -gt 8000) { break }
+                $cur = $q.Dequeue()
+                $here = [string]$cur[0]
+                $depth = [int]$cur[1]
+                try {
+                    $di = New-Object System.IO.DirectoryInfo($here)
+                    $nKids = 0
+                    foreach ($f in $di.EnumerateFiles()) {
+                        if (Test-ScanCanceled) { break }
+                        $nKids++
+                        if ($nKids -gt 500) { break }
+                        if ($want -contains $f.Name) { $foundExe = $f.FullName; break }
+                    }
+                    if ($foundExe) { break }
+                    if ($depth -ge 2) { continue }
+                    foreach ($sub in $di.EnumerateDirectories()) {
+                        if (Test-ScanCanceled) { break }
+                        $nKids++
+                        if ($nKids -gt 500) { break }
+                        $q.Enqueue(@($sub.FullName, ($depth + 1)))
+                    }
+                } catch { continue }
+            }
+            if ($foundExe) { break }
         }
     }
     $folder = Test-PathAny @(
@@ -5359,72 +5404,6 @@ function Apply-DetectedFilterView {
 }
 
 
-function Get-GitHubLatestReleaseTag {
-    $repo = $script:GitHubRepo
-    $url = "https://api.github.com/repos/$repo/releases/latest"
-    $page = "https://github.com/$repo/releases/latest"
-    $resp = $null
-    $stream = $null
-    $ms = $null
-    $tlsPrev = $null
-    try {
-        $tlsPrev = [System.Net.ServicePointManager]::SecurityProtocol
-        try { [System.Net.ServicePointManager]::SecurityProtocol = $tlsPrev -bor [System.Net.SecurityProtocolType]::Tls12 } catch {}
-        $req = [System.Net.HttpWebRequest]::Create($url)
-        $req.Method = "GET"
-        $req.UserAgent = "PortableAIScanner"
-        $req.Timeout = 8000
-        $req.ReadWriteTimeout = 8000
-        $req.AllowAutoRedirect = $false
-        $req.Accept = "application/vnd.github+json"
-        $resp = $req.GetResponse()
-        $maxBytes = 65536
-        try {
-            if ($resp.ContentLength -gt $maxBytes) {
-                Write-Log "UPDATE: response too large"
-                return $null
-            }
-        } catch {}
-        $stream = $resp.GetResponseStream()
-        $ms = New-Object System.IO.MemoryStream
-        $buf = New-Object byte[] 4096
-        $total = 0
-        while (($n = $stream.Read($buf, 0, $buf.Length)) -gt 0) {
-            $total += $n
-            if ($total -gt $maxBytes) {
-                Write-Log "UPDATE: response too large"
-                return $null
-            }
-            $ms.Write($buf, 0, $n)
-        }
-        $json = [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
-        if (-not $json) {
-            Write-Log "UPDATE: empty response"
-            return $null
-        }
-        $obj = $json | ConvertFrom-Json
-        $tag = [string]$obj.tag_name
-        if (-not $tag) {
-            Write-Log "UPDATE: no tag_name"
-            return $null
-        }
-        $html = [string]$obj.html_url
-        $allow = "https://github.com/$repo/releases/"
-        if (-not $html -or -not $html.StartsWith($allow)) { $html = $page }
-        return [PSCustomObject]@{ Tag = $tag; HtmlUrl = $html }
-    } catch {
-        Write-Log "UPDATE: fetch failed $($_.Exception.Message)"
-        return $null
-    } finally {
-        if ($ms) { try { $ms.Dispose() } catch {} }
-        if ($stream) { try { $stream.Close() } catch {} }
-        if ($resp) { try { $resp.Close() } catch {} }
-        if ($null -ne $tlsPrev) {
-            try { [System.Net.ServicePointManager]::SecurityProtocol = $tlsPrev } catch {}
-        }
-    }
-}
-
 function Compare-AppVersionToTag {
     param([string]$AppVer, [string]$Tag)
     $a = ($AppVer -replace '^[vV]', '')
@@ -5441,44 +5420,171 @@ function Compare-AppVersionToTag {
     }
 }
 
-function Update-GpuLabel {
-    if (-not $lblGpu) { return }
-    if ($script:ScanBusy) { return }
-    $util = -1.0
-    $dedUsed = 0.0
-    $shaUsed = 0.0
+function Stop-UpdateBackground {
     try {
-        $engines = @(Get-CimInstance -ClassName Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop)
-        foreach ($eng in $engines) {
-            $n = ""
-            try { $n = [string]$eng.Name } catch {}
-            if ($n -notmatch 'engtype_3D|engtype_Compute') { continue }
-            $p = 0.0
-            try { $p = [double]$eng.UtilizationPercentage } catch {}
-            if ($p -gt $util) { $util = $p }
-        }
-    } catch {}
-    try {
-        $rows = @(Get-CimInstance -ClassName Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction Stop)
-        foreach ($row in $rows) {
-            $d = 0.0
-            $s = 0.0
-            try { $d = [double]$row.DedicatedUsage } catch {}
-            try { $s = [double]$row.SharedUsage } catch {}
-            $sum = $d + $s
-            if ($sum -ge ($dedUsed + $shaUsed)) {
-                $dedUsed = $d
-                $shaUsed = $s
+        if ($script:UpdHandle -and $script:UpdPs) {
+            if ($script:UpdHandle.IsCompleted) {
+                try { [void]$script:UpdPs.EndInvoke($script:UpdHandle) } catch {}
+            } else {
+                try { $script:UpdPs.Stop() } catch {}
+                try { [void]$script:UpdPs.EndInvoke($script:UpdHandle) } catch {}
             }
         }
     } catch {}
-    $gpuUsed = $dedUsed + $shaUsed
+    try { if ($script:UpdPs) { $script:UpdPs.Dispose() } } catch {}
+    $script:UpdPs = $null
+    $script:UpdHandle = $null
+    try { if ($timerUpdate) { $timerUpdate.Stop() } } catch {}
+}
+
+function Apply-UpdateCheckResult {
+    param($Snap)
+    if (-not $btnUpdate) { return }
+    if (-not $Snap -or -not $Snap.Tag) {
+        $btnUpdate.Text = "Could not check"
+        $script:UpdateUrl = ""
+        Write-Log "UPDATE: failed"
+        return
+    }
+    $cmp = Compare-AppVersionToTag $script:AppVersion ([string]$Snap.Tag)
+    $verNum = ([string]$Snap.Tag) -replace '^[vV]', ''
+    if (-not $verNum) { $verNum = "unknown" }
+    $shown = "v$verNum"
+    $html = [string]$Snap.HtmlUrl
+    $allow = "https://github.com/" + $script:GitHubRepo + "/releases/"
+    if ($html -and $html.StartsWith($allow)) { $script:UpdateUrl = $html } else { $script:UpdateUrl = $allow + "latest" }
+    $btnUpdate.Font = New-Object System.Drawing.Font($form.Font.FontFamily, $form.Font.Size, [System.Drawing.FontStyle]::Bold)
+    if ($cmp -eq 1) {
+        $btnUpdate.Text = "Download $shown"
+        Write-Log "UPDATE: new $shown"
+    } elseif ($cmp -eq 0) {
+        $btnUpdate.Text = "Found: $shown (Latest)"
+        Write-Log "UPDATE: latest $shown"
+    } elseif ($cmp -eq -1) {
+        $btnUpdate.Text = "Found: $shown (Old)"
+        Write-Log "UPDATE: old $shown"
+    } else {
+        $btnUpdate.Text = "Found: $shown"
+        Write-Log "UPDATE: tag $shown"
+    }
+}
+
+function Start-UpdateBackground {
+    if ($script:UpdHandle -and -not $script:UpdHandle.IsCompleted) { return }
+    Stop-UpdateBackground
+    $repo = [string]$script:GitHubRepo
+    try {
+        $ps = [powershell]::Create()
+        [void]$ps.AddScript({
+            param($Repo)
+            $url = "https://api.github.com/repos/$Repo/releases/latest"
+            $page = "https://github.com/$Repo/releases/latest"
+            $resp = $null
+            $stream = $null
+            $ms = $null
+            $tlsPrev = $null
+            try {
+                $tlsPrev = [System.Net.ServicePointManager]::SecurityProtocol
+                try { [System.Net.ServicePointManager]::SecurityProtocol = $tlsPrev -bor [System.Net.SecurityProtocolType]::Tls12 } catch {}
+                $req = [System.Net.HttpWebRequest]::Create($url)
+                $req.Method = "GET"
+                $req.UserAgent = "PortableAIScanner"
+                $req.Timeout = 8000
+                $req.ReadWriteTimeout = 8000
+                $req.AllowAutoRedirect = $false
+                $req.Accept = "application/vnd.github+json"
+                $resp = $req.GetResponse()
+                $maxBytes = 65536
+                try {
+                    if ($resp.ContentLength -gt $maxBytes) { return $null }
+                } catch {}
+                $stream = $resp.GetResponseStream()
+                $ms = New-Object System.IO.MemoryStream
+                $buf = New-Object byte[] 4096
+                $total = 0
+                while (($n = $stream.Read($buf, 0, $buf.Length)) -gt 0) {
+                    $total += $n
+                    if ($total -gt $maxBytes) { return $null }
+                    $ms.Write($buf, 0, $n)
+                }
+                $json = [System.Text.Encoding]::UTF8.GetString($ms.ToArray())
+                if (-not $json) { return $null }
+                $obj = $json | ConvertFrom-Json
+                $tag = [string]$obj.tag_name
+                if (-not $tag) { return $null }
+                $html = [string]$obj.html_url
+                $allow = "https://github.com/$Repo/releases/"
+                if (-not $html -or -not $html.StartsWith($allow)) { $html = $page }
+                return [pscustomobject]@{ Tag = $tag; HtmlUrl = $html }
+            } catch {
+                return $null
+            } finally {
+                if ($ms) { try { $ms.Dispose() } catch {} }
+                if ($stream) { try { $stream.Close() } catch {} }
+                if ($resp) { try { $resp.Close() } catch {} }
+                if ($null -ne $tlsPrev) {
+                    try { [System.Net.ServicePointManager]::SecurityProtocol = $tlsPrev } catch {}
+                }
+            }
+        }).AddArgument($repo)
+        $script:UpdPs = $ps
+        $script:UpdHandle = $ps.BeginInvoke()
+        if ($timerUpdate) { $timerUpdate.Start() }
+    } catch {
+        $script:UpdPs = $null
+        $script:UpdHandle = $null
+        if ($btnUpdate) { $btnUpdate.Text = "Could not check" }
+    }
+}
+
+function Poll-UpdateBackground {
+    if (-not $script:UpdHandle) {
+        try { if ($timerUpdate) { $timerUpdate.Stop() } } catch {}
+        return
+    }
+    if (-not $script:UpdHandle.IsCompleted) { return }
+    $snap = $null
+    try {
+        $inv = $script:UpdPs.EndInvoke($script:UpdHandle)
+        if ($inv -and @($inv).Count -gt 0) { $snap = @($inv)[-1] }
+    } catch {}
+    try { if ($script:UpdPs) { $script:UpdPs.Dispose() } } catch {}
+    $script:UpdPs = $null
+    $script:UpdHandle = $null
+    try { if ($timerUpdate) { $timerUpdate.Stop() } } catch {}
+    Apply-UpdateCheckResult $snap
+}
+
+function Stop-GpuBackground {
+    try {
+        if ($script:GpuHandle -and $script:GpuPs) {
+            if ($script:GpuHandle.IsCompleted) {
+                try { [void]$script:GpuPs.EndInvoke($script:GpuHandle) } catch {}
+            } else {
+                try { $script:GpuPs.Stop() } catch {}
+                try { [void]$script:GpuPs.EndInvoke($script:GpuHandle) } catch {}
+            }
+        }
+    } catch {}
+    try { if ($script:GpuPs) { $script:GpuPs.Dispose() } } catch {}
+    $script:GpuPs = $null
+    $script:GpuHandle = $null
+}
+
+function Apply-GpuSnapshot {
+    param($Snap)
+    if (-not $lblGpu) { return }
+    $util = -1.0
+    $gpuUsed = 0.0
+    try { if ($null -ne $Snap.Util) { $util = [double]$Snap.Util } } catch {}
+    try { if ($null -ne $Snap.Used) { $gpuUsed = [double]$Snap.Used } } catch {}
     if ($util -lt 0 -and $gpuUsed -le 0) {
         $script:GpuFailCount = [int]$script:GpuFailCount + 1
         $lblGpu.Text = "GPU: --"
         $lblGpu.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
         if ($script:GpuFailCount -ge 2 -and $timerGpu) {
             try { $timerGpu.Stop() } catch {}
+            Stop-GpuBackground
         }
         return
     }
@@ -5491,6 +5597,73 @@ function Update-GpuLabel {
     }
     $lblGpu.Text = "GPU Utilization: $utilText    GPU Memory: $memText"
     $lblGpu.ForeColor = [System.Drawing.Color]::FromArgb(32, 32, 32)
+}
+
+function Start-GpuBackground {
+    if ($script:GpuHandle -and -not $script:GpuHandle.IsCompleted) { return }
+    if ($script:GpuHandle -and $script:GpuHandle.IsCompleted) {
+        try { [void]$script:GpuPs.EndInvoke($script:GpuHandle) } catch {}
+        try { if ($script:GpuPs) { $script:GpuPs.Dispose() } } catch {}
+        $script:GpuPs = $null
+        $script:GpuHandle = $null
+    }
+    try {
+        $ps = [powershell]::Create()
+        [void]$ps.AddScript({
+            $util = -1.0
+            $dedUsed = 0.0
+            $shaUsed = 0.0
+            try {
+                $engines = @(Get-CimInstance -ClassName Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction Stop)
+                foreach ($eng in $engines) {
+                    $n = ""
+                    try { $n = [string]$eng.Name } catch {}
+                    if ($n -notmatch 'engtype_3D|engtype_Compute') { continue }
+                    $p = 0.0
+                    try { $p = [double]$eng.UtilizationPercentage } catch {}
+                    if ($p -gt $util) { $util = $p }
+                }
+            } catch {}
+            try {
+                $rows = @(Get-CimInstance -ClassName Win32_PerfFormattedData_GPUPerformanceCounters_GPUAdapterMemory -ErrorAction Stop)
+                foreach ($row in $rows) {
+                    $d = 0.0
+                    $s = 0.0
+                    try { $d = [double]$row.DedicatedUsage } catch {}
+                    try { $s = [double]$row.SharedUsage } catch {}
+                    $sum = $d + $s
+                    if ($sum -ge ($dedUsed + $shaUsed)) {
+                        $dedUsed = $d
+                        $shaUsed = $s
+                    }
+                }
+            } catch {}
+            return [pscustomobject]@{ Util = $util; Used = ($dedUsed + $shaUsed) }
+        })
+        $script:GpuPs = $ps
+        $script:GpuHandle = $ps.BeginInvoke()
+    } catch {
+        $script:GpuPs = $null
+        $script:GpuHandle = $null
+    }
+}
+
+function Update-GpuLabel {
+    if (-not $lblGpu) { return }
+    if ($script:GpuHandle -and $script:GpuHandle.IsCompleted) {
+        $snap = $null
+        try {
+            $inv = $script:GpuPs.EndInvoke($script:GpuHandle)
+            if ($inv -and @($inv).Count -gt 0) { $snap = @($inv)[-1] }
+        } catch {}
+        try { if ($script:GpuPs) { $script:GpuPs.Dispose() } } catch {}
+        $script:GpuPs = $null
+        $script:GpuHandle = $null
+        if ($snap) { Apply-GpuSnapshot $snap }
+        else { Apply-GpuSnapshot ([pscustomobject]@{ Util = -1.0; Used = 0.0 }) }
+    }
+    if ($script:GpuFailCount -ge 2) { return }
+    if (-not $script:GpuHandle) { Start-GpuBackground }
 }
 
 function Move-UpdateControls {
@@ -5751,6 +5924,10 @@ $timerGpu = New-Object System.Windows.Forms.Timer
 $timerGpu.Interval = 2000
 $timerGpu.Add_Tick({ Update-GpuLabel })
 
+$timerUpdate = New-Object System.Windows.Forms.Timer
+$timerUpdate.Interval = 250
+$timerUpdate.Add_Tick({ Poll-UpdateBackground })
+
 $lv = New-Object System.Windows.Forms.ListView
 $lv.Location = New-Object System.Drawing.Point(20, 125)
 $lv.Size = New-Object System.Drawing.Size(840, 450)
@@ -5776,6 +5953,7 @@ $form.Add_Shown({
     try { Move-UpdateControls } catch {}
     try {
         if ($timerGpu -and -not $timerGpu.Enabled) { $timerGpu.Start() }
+        Start-GpuBackground
     } catch {}
     try {
         $form.Activate()
@@ -5848,41 +6026,11 @@ $btnUpdate.Add_Click({
         try { if ([string]$script:UpdateUrl -like ("https://github.com/" + $script:GitHubRepo + "/releases/*")) { Start-Process $script:UpdateUrl } } catch {}
         return
     }
+    if ($script:UpdHandle -and -not $script:UpdHandle.IsCompleted) { return }
     $btnUpdate.Text = "Checking..."
     $script:UpdateUrl = ""
-    $form.Refresh()
-    [System.Windows.Forms.Application]::DoEvents()
     Write-Log "UPDATE: checking AndrewTools/PortableAIScanner"
-    try {
-        $rel = Get-GitHubLatestReleaseTag
-        if (-not $rel -or -not $rel.Tag) {
-            $btnUpdate.Text = "Could not check"
-            Write-Log "UPDATE: failed"
-            return
-        }
-        $cmp = Compare-AppVersionToTag $script:AppVersion $rel.Tag
-        $verNum = ([string]$rel.Tag) -replace '^[vV]', ''
-        if (-not $verNum) { $verNum = "unknown" }
-        $shown = "v$verNum"
-        if ($rel.HtmlUrl) { $script:UpdateUrl = [string]$rel.HtmlUrl }
-        $btnUpdate.Font = New-Object System.Drawing.Font($form.Font.FontFamily, $form.Font.Size, [System.Drawing.FontStyle]::Bold)
-        if ($cmp -eq 1) {
-            $btnUpdate.Text = "Download $shown"
-            Write-Log "UPDATE: new $shown"
-        } elseif ($cmp -eq 0) {
-            $btnUpdate.Text = "Found: $shown (Latest)"
-            Write-Log "UPDATE: latest $shown"
-        } elseif ($cmp -eq -1) {
-            $btnUpdate.Text = "Found: $shown (Old)"
-            Write-Log "UPDATE: old $shown"
-        } else {
-            $btnUpdate.Text = "Found: $shown"
-            Write-Log "UPDATE: tag $shown"
-        }
-    } catch {
-        $btnUpdate.Text = "Could not check"
-        Write-Log "UPDATE: exception $($_.Exception.Message)"
-    }
+    Start-UpdateBackground
 })
 
 
@@ -6387,6 +6535,9 @@ try {
 } finally {
     try {
         if ($timerGpu) { $timerGpu.Stop(); $timerGpu.Dispose() }
+        if ($timerUpdate) { $timerUpdate.Stop(); $timerUpdate.Dispose() }
+        Stop-GpuBackground
+        Stop-UpdateBackground
     } catch {}
     try { if ($form) { $form.Dispose() } } catch {}
     try { if ($script:InstanceMutex) { $script:InstanceMutex.ReleaseMutex(); $script:InstanceMutex.Dispose() } } catch {}
