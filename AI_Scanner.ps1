@@ -7,8 +7,8 @@
 # That is not a missing function closer. Count braces outside strings.
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.7.1"
-$script:AppBuild = "0070"
+$script:AppVersion = "1.7.2"
+$script:AppBuild = "0100"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -474,8 +474,61 @@ function Read-NotepadSettingsDatFile {
     return $null
 }
 
+function Get-LoopbackListenOwnerMap {
+    if ($null -ne $script:ListenOwnerMap) { return $script:ListenOwnerMap }
+    $map = @{}
+    try {
+        $conns = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue)
+        foreach ($c in $conns) {
+            $addr = ""
+            try { $addr = [string]$c.LocalAddress } catch {}
+            if ($addr -and $addr -ne "127.0.0.1" -and $addr -ne "::1" -and $addr -ne "0.0.0.0" -and $addr -ne "::") { continue }
+            $lp = 0
+            try { $lp = [int]$c.LocalPort } catch { continue }
+            if ($lp -le 0) { continue }
+            if ($map.ContainsKey($lp)) { continue }
+            $pid = 0
+            try { $pid = [int]$c.OwningProcess } catch { continue }
+            if ($pid -le 0) { continue }
+            try {
+                $pr = Get-Process -Id $pid -ErrorAction SilentlyContinue
+                if ($pr) { $map[$lp] = [string]$pr.ProcessName }
+            } catch {}
+        }
+    } catch {}
+    $script:ListenOwnerMap = $map
+    return $map
+}
+
+function Test-LoopbackListenOwnerName {
+    param([int]$Port)
+    $map = Get-LoopbackListenOwnerMap
+    if ($map -and $map.ContainsKey([int]$Port)) { return [string]$map[[int]$Port] }
+    return $null
+}
+
+function Test-PortOwnerMatchesProduct {
+    param([int]$Port)
+    $owner = Test-LoopbackListenOwnerName -Port $Port
+    if (-not $owner) { return $false }
+    $n = $owner.ToLower()
+    switch ($Port) {
+        11434 { return ($n -like "ollama*") }
+        1234 { return ($n -like "lm studio*" -or $n -eq "lm studio") }
+        4891 { return ($n -like "gpt4all*" -or $n -eq "chat" -or $n -like "lm studio*") }
+        1337 { return ($n -like "jan*") }
+        8080 { return ($n -like "llama-server*" -or $n -like "koboldcpp*" -or $n -like "local-ai*" -or $n -like "localai*") }
+        5000 { return ($n -like "llama-server*" -or $n -like "koboldcpp*" -or $n -like "local-ai*" -or $n -like "localai*") }
+        5001 { return ($n -like "llama-server*" -or $n -like "koboldcpp*" -or $n -like "local-ai*" -or $n -like "localai*") }
+        3000 { return ($n -like "llama-server*" -or $n -like "koboldcpp*" -or $n -like "local-ai*" -or $n -like "localai*") }
+        default { return $false }
+    }
+}
+
 function Test-LocalAiPortAllowed {
     param([int]$Port)
+    $owner = Test-LoopbackListenOwnerName -Port $Port
+    if ($owner -and -not (Test-PortOwnerMatchesProduct -Port $Port)) { return $false }
     switch ($Port) {
         11434 {
             return [bool](Test-PathAny @(
@@ -652,7 +705,7 @@ function New-Result {
         [string]$Activated = "Not Installed",
         [string]$Details = "",
         [string]$Version = "",
-        [string]$Running = "No",
+        [string]$Running = "",
         [string]$DisableHint = ""
     )
     return [PSCustomObject]@{
@@ -690,7 +743,9 @@ function Get-HowToDisable {
         "Jan*" { return "Open Jan > Hub / Models > delete models. Or $apps > Jan > Uninstall." }
         "GPT4All*" { return "Open GPT4All > Downloads / Models > remove models. Or $apps > GPT4All > Uninstall." }
         "Cursor*" { return "$apps > Cursor > Uninstall." }
-        "Windows On-Device*" { return "Windows Settings > Privacy & security > Text and image generation > turn the feature off. Also Privacy & security > Click to Do / Recall if those pages appear, and turn them off." }
+        "Recall (Windows)*" { return "Windows Settings > Privacy & security > Recall & snapshots > turn off Save snapshots. To remove the feature: search Turn Windows features on or off > uncheck Recall > OK > restart." }
+        "Click to Do (Windows)*" { return "Windows Settings > Privacy & security > Click to Do > turn it Off." }
+        "Windows On-Device*" { return "Windows Settings > Privacy & security > Text and image generation > turn the feature off. Settings > System > AI components. Only Image Creation can be removed there if it is listed." }
         "GitHub Copilot*" { return "Open VS Code > Extensions > GitHub Copilot > Disable or Uninstall." }
         "ComfyUI*" { return "$apps > ComfyUI if listed > Uninstall. If it is only a folder app, open Start > right-click the app shortcut > Uninstall." }
         "Opera*" { return "Open Opera > Settings > Sidebar > turn off Aria / Opera AI." }
@@ -710,25 +765,26 @@ function Get-HowToDisable {
         "Open WebUI*" { return "If Open WebUI appears in $apps, click Uninstall. If you use Docker Desktop, open Docker Desktop and stop or delete the Open WebUI container." }
         "AnythingLLM*" { return "$apps > AnythingLLM > Uninstall." }
         "text-generation-webui*" { return "If it appears in $apps, click Uninstall. If it is only a folder app, use Start > right-click the shortcut > Uninstall when offered." }
-        "Dolphin*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove the Dolphin model. Or $apps > uninstall that app." }
-        "Other Local Models*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove the listed models. Or $apps > uninstall that app." }
-        "Qwen*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Qwen. Or $apps > uninstall the app that downloaded it." }
-        "Llama *" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Llama. Or $apps > uninstall the app that downloaded it." }
-        "DeepSeek*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove DeepSeek. Or $apps > uninstall the app that downloaded it." }
-        "Gemma*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Gemma. Or $apps > uninstall the app that downloaded it." }
-        "Phi*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Phi. Or $apps > uninstall the app that downloaded it." }
-        "Granite*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Granite. Or $apps > uninstall the app that downloaded it." }
-        "GLM*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove GLM. Or $apps > uninstall the app that downloaded it." }
-        "Mistral*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Mistral. Or $apps > uninstall the app that downloaded it." }
-        "gpt-oss*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove gpt-oss. Or $apps > uninstall the app that downloaded it." }
-        "GPT-J*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove GPT-J or Pygmalion. Or $apps > uninstall the app that downloaded it." }
-        "Nemotron*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Nemotron. Or $apps > uninstall the app that downloaded it." }
-        "Muse *" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Muse. Or $apps > uninstall the app that downloaded it." }
-        "Kimi*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Kimi. Or $apps > uninstall the app that downloaded it." }
-        "MiniMax*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove MiniMax. Or $apps > uninstall the app that downloaded it." }
-        "MiniCPM*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove MiniCPM. Or $apps > uninstall the app that downloaded it." }
-        "Hunyuan*" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Hunyuan. Or $apps > uninstall the app that downloaded it." }
-        "Ling *" { return "Open Ollama, LM Studio, GPT4All, or Jan > Models > remove Ling. Or $apps > uninstall the app that downloaded it." }
+        "Dolphin*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Other Local Models*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Qwen*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Llama *" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "DeepSeek*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Gemma*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Phi*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Granite*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "GLM*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Mistral*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "gpt-oss*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "GPT-J*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Nemotron*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Muse *" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Kimi*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "MiniMax*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "MiniCPM*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Hunyuan*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "Ling *" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        "MiMo*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "Foundry Local*" { return "$apps > Foundry Local > Uninstall. Or Settings > System > AI components if listed." }
         default { return "$apps > find this app > Uninstall. If it is a browser feature, open that browser Settings and turn the AI option off." }
     }
@@ -1038,7 +1094,13 @@ function Get-KnownFamilyPatterns {
         '(?i)minicpm',
         '(?i)hunyuan',
         '(?i)ling-?3',
-        '(?i)inclusionai'
+        '(?i)inclusionai',
+        '(?i)mimo-v2\.6',
+        '(?i)mimo-v2\.5',
+        '(?i)mimo-v2',
+        '(?i)mimo_v2',
+        '(?i)xiaomi-mimo',
+        '(?i)xiaomi_mimo'
     )
 }
 
@@ -1092,6 +1154,8 @@ function Test-ProductProcessOpen {
         "Claude Code*" { $patterns = @("claude") }
         "Claude*" { $patterns = @("Claude") }
         "Gemini (Google)*" { $patterns = @() }
+        "Recall (Windows)*" { $patterns = @("Recall") }
+        "Click to Do (Windows)*" { $patterns = @("ClickToDo", "ClickToDoExperience") }
         "Copilot (Microsoft)" { $patterns = @("Copilot") }
         "Microsoft 365 Copilot*" { $patterns = @("Microsoft365Copilot") }
         "Grok*" { $patterns = @("Grok") }
@@ -1420,6 +1484,16 @@ function Test-IsRunning {
         }
         "Ling *" {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @('(?i)ling-?3', '(?i)inclusionai')))
+        }
+        "MiMo*" {
+            return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @(
+                '(?i)mimo-v2\.6',
+                '(?i)mimo-v2\.5',
+                '(?i)mimo-v2',
+                '(?i)mimo_v2',
+                '(?i)xiaomi-mimo',
+                '(?i)xiaomi_mimo'
+            )))
         }
         default {
             return "No"
@@ -1775,7 +1849,12 @@ function Get-OptGuideFolderDetail {
                 $modelBase = Join-Path $root $rel
                 if (-not (Test-Path -LiteralPath $modelBase)) { continue }
                 $anyFile = $null
-                try { $anyFile = Get-ChildItem -LiteralPath $modelBase -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1 } catch {}
+                try { $anyFile = Get-FirstWeightsBin -Root $modelBase } catch { $anyFile = $null }
+                if (-not $anyFile) {
+                    try {
+                        $anyFile = Get-ChildItem -LiteralPath $modelBase -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                    } catch { $anyFile = $null }
+                }
                 if (-not $anyFile) { $emptyFolder = $true; continue }
                 $folderPresent = $true
                 $weights = Get-FirstWeightsBin -Root $modelBase
@@ -1791,6 +1870,161 @@ function Get-OptGuideFolderDetail {
     elseif ($emptyFolder) { $detail = "model folder empty" }
     else { $detail = "no model folder" }
     return @{ Detail = $detail; HasFiles = $folderPresent; HasWeights = $weightsPresent }
+}
+
+
+function Test-ChromeProcessLive {
+    try {
+        $procs = @(Get-Process -Name "chrome" -ErrorAction SilentlyContinue)
+        return ($procs.Count -gt 0)
+    } catch {
+        return $false
+    }
+}
+
+function Get-ChromeRowStatus {
+    if (-not $lv) { return "" }
+    $n = 0
+    try { $n = $lv.Items.Count } catch { return "" }
+    for ($i = 0; $i -lt $n; $i++) {
+        $it = Get-ListViewItemAt $lv $i
+        if (-not $it -or $it.Tag -eq "section") { continue }
+        $cur = $it.Tag
+        if ($cur -and [string]$cur.Name -like "Google Chrome + Gemini*") {
+            return [string]$cur.Activated
+        }
+    }
+    return ""
+}
+
+function Test-ChromeStatusClear {
+    param([string]$Status)
+    return ($Status -eq "Activated" -or $Status -eq "Deactivated" -or $Status -eq "No AI Features")
+}
+
+function Save-ChromeReadStamp {
+    param([string]$Status)
+    if (-not $script:ChromeRecheckPending) {
+        $script:ChromeStatusBaseline = [string]$Status
+    }
+}
+
+function Set-ChromeStatusBar {
+    param([string]$Text)
+    if (-not $Text -or -not (Test-UiAlive) -or -not $lblStatus) { return }
+    try {
+        $lblStatus.Text = $Text
+        $lblStatus.Refresh()
+    } catch {}
+}
+
+function Stop-ChromeSettingsRecheck {
+    $script:ChromeRecheckPending = $false
+    $script:ChromeRecheckStep = 0
+    if ($script:ChromeRecheckTimer) {
+        try { $script:ChromeRecheckTimer.Stop() } catch {}
+        try { $script:ChromeRecheckTimer.Dispose() } catch {}
+        $script:ChromeRecheckTimer = $null
+    }
+}
+
+function Update-ChromeRowFromResult {
+    param($r)
+    if (-not $r -or -not (Test-UiAlive) -or -not $lv) { return }
+    try {
+        [void](Set-RunningAndStatus $r (Test-IsRunning -AiName $r.Name))
+    } catch {}
+    $n = 0
+    try { $n = $lv.Items.Count } catch { return }
+    for ($i = 0; $i -lt $n; $i++) {
+        $it = Get-ListViewItemAt $lv $i
+        if (-not $it -or $it.Tag -eq "section") { continue }
+        $cur = $it.Tag
+        if (-not $cur) { continue }
+        if ([string]$cur.Name -ne [string]$r.Name) { continue }
+        $it.Tag = $r
+        try { Set-ListViewItemAppearance -Item $it -r $r } catch {}
+        break
+    }
+    if ($script:LvCache) {
+        foreach ($it in @($script:LvCache)) {
+            if (-not $it -or $it.Tag -eq "section") { continue }
+            $cur = $it.Tag
+            if ($cur -and [string]$cur.Name -eq [string]$r.Name) { $it.Tag = $r }
+        }
+    }
+}
+
+function Start-ChromeFollowUpTimer {
+    param([int]$IntervalMs)
+    if ($IntervalMs -lt 1) { $IntervalMs = 10000 }
+    if ($script:ChromeRecheckTimer) {
+        try { $script:ChromeRecheckTimer.Stop() } catch {}
+        try { $script:ChromeRecheckTimer.Dispose() } catch {}
+        $script:ChromeRecheckTimer = $null
+    }
+    $timer = New-Object System.Windows.Forms.Timer
+    $timer.Interval = $IntervalMs
+    $timer.Add_Tick({
+        try {
+            $tm = $script:ChromeRecheckTimer
+            if ($tm) { try { $tm.Stop() } catch {} }
+            Invoke-ChromeSettingsRecheck
+        } catch {}
+    })
+    $script:ChromeRecheckTimer = $timer
+    $timer.Start()
+}
+
+function Invoke-ChromeSettingsRecheck {
+    if (-not (Test-UiAlive)) { return }
+    if ($script:ScanBusy) { return }
+    if (Test-ScanCanceled) { return }
+    $r = $null
+    try {
+        $r = Scan-GeminiChrome
+        if ($r) { Update-ChromeRowFromResult $r }
+    } catch {
+        try { Write-ErrorLog "Chrome settings recheck failed" -ErrorRecord $_ } catch {}
+    }
+    $st = ""
+    try {
+        if ($r) { $st = [string]$r.Activated }
+        if (-not $st) { $st = Get-ChromeRowStatus }
+    } catch {}
+    $base = [string]$script:ChromeStatusBaseline
+    $changed = ($st -and $base -and $st -ne $base)
+    if ($changed) {
+        try { Stop-ChromeSettingsRecheck } catch {}
+        Set-ChromeStatusBar "Chrome AI switch changed."
+        return
+    }
+    $step = 0
+    try { $step = [int]$script:ChromeRecheckStep } catch { $step = 0 }
+    $chromeOpen = $false
+    try { $chromeOpen = [bool](Test-ChromeProcessLive) } catch { $chromeOpen = $false }
+    if ($step -lt 2 -and $chromeOpen) {
+        $script:ChromeRecheckStep = 2
+        $script:ChromeRecheckPending = $true
+        Start-ChromeFollowUpTimer 10000
+        return
+    }
+    try { Stop-ChromeSettingsRecheck } catch {}
+}
+
+function Start-ChromeSettingsRecheck {
+    Stop-ChromeSettingsRecheck
+    if (-not (Test-UiAlive)) { return }
+    if ([int]$script:ScanPass -lt 2) { return }
+    $st = ""
+    try { $st = Get-ChromeRowStatus } catch { $st = "" }
+    if (-not $st -or $st -eq "Not Installed" -or $st -eq "No AI Features") { return }
+    $chromeOpen = $false
+    try { $chromeOpen = [bool](Test-ChromeProcessLive) } catch { $chromeOpen = $false }
+    if (-not $chromeOpen) { return }
+    $script:ChromeRecheckPending = $true
+    $script:ChromeRecheckStep = 1
+    Start-ChromeFollowUpTimer 10000
 }
 
 function Scan-GeminiChrome {
@@ -1813,6 +2047,7 @@ function Scan-GeminiChrome {
         Set-ScanStatus $r "Not Installed"
         $r.Details = "No Chrome browser found"
         $r.DisableHint = ""
+        Save-ChromeReadStamp -Status $r.Activated
         return $r
     }
     $r.Installed = $true
@@ -1824,6 +2059,7 @@ function Scan-GeminiChrome {
         $r.DisableHint = ""
         Set-ScanStatus $r "No AI Features" "Chrome $chMajor present; no Gemini on this version"
         $r.Details += " | This version has no AI"
+        Save-ChromeReadStamp -Status $r.Activated
         return $r
     }
 
@@ -1863,7 +2099,10 @@ function Scan-GeminiChrome {
         "$env:LOCALAPPDATA\Google\Chrome Dev\User Data",
         "$env:LOCALAPPDATA\Google\Chrome SxS\User Data"
     )
-    Set-ScanProgressText "Reading Chrome settings..."
+    if (-not $script:ChromeRecheckPending) {
+        Set-ScanProgressText "Reading Chrome settings..."
+    }
+
     foreach ($prefFile in @(Get-ChromiumPrefFiles $chromeDataRoots)) {
         try {
             $content = Get-PrefFileText $prefFile
@@ -1924,6 +2163,7 @@ function Scan-GeminiChrome {
         $r.Details += " | AI off | $modelDetail"
     }
     $content = $null
+    Save-ChromeReadStamp -Status $r.Activated
     return $r
 }
 
@@ -2098,12 +2338,20 @@ function Scan-GeminiDesktop {
     $geminiFolder = $false
     if (Test-Path $geminiRoot) {
         $geminiFolder = $true
+        $geminiSkipWalk = $false
         try {
-            $found = Get-ChildItem -Path $geminiRoot -Recurse -Depth 3 -Filter "Gemini.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            $gdi = Get-Item -LiteralPath $geminiRoot -Force -ErrorAction Stop
+            if ($gdi.Attributes -band [IO.FileAttributes]::ReparsePoint) { $geminiSkipWalk = $true }
+        } catch {}
+        try {
+            $found = $null
+            if (-not $geminiSkipWalk) {
+            $found = Get-ChildItem -LiteralPath $geminiRoot -Recurse -Depth 3 -Filter "Gemini.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $found) {
-                $found = Get-ChildItem -Path $geminiRoot -Recurse -Depth 3 -Filter "gemini.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+                $found = Get-ChildItem -LiteralPath $geminiRoot -Recurse -Depth 3 -Filter "gemini.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
             }
             if ($found) { $exe = $found.FullName }
+            }
         } catch {}
     }
     if (-not $exe) {
@@ -2757,15 +3005,35 @@ function Scan-WindowsAIComponents {
     if ($null -eq $script:AllAppx) {
         $script:AllAppx = @(Get-AppxPackage -ErrorAction SilentlyContinue)
     }
-    $aiPkgs = @($script:AllAppx | Where-Object {
-        $_.Name -match "Windows\.AI|Microsoft\.Windows\.AI|PhiSilica|WindowsAI|AI\.Model"
-    })
+    $aiNameRe = "Windows\.AI|Microsoft\.Windows\.AI|PhiSilica|AionInstruct|WindowsAI|AI\.Model|ImageCreation|ImageGeneration|ImageProcessing|ImageTransform|ImageSearch|ContentExtraction|SemanticAnalysis|SettingsModel|ExecutionProvider"
+    $aiPkgs = @($script:AllAppx | Where-Object { $_.Name -match $aiNameRe })
     $parts = @()
 
     if ($aiPkgs) {
         $r.Installed = $true
-        $names = ($aiPkgs | Select-Object -First 3 -ExpandProperty Name) -join ", "
+        $names = ($aiPkgs | Select-Object -First 6 -ExpandProperty Name) -join ", "
         $parts += "App: $names"
+        $labels = [ordered]@{
+            "Phi Silica" = "PhiSilica|AionInstruct"
+            "Image Creation" = "ImageCreation|ImageGeneration"
+            "Image Processing" = "ImageProcessing"
+            "Image Transform" = "ImageTransform"
+            "Image Search" = "ImageSearch"
+            "Content Extraction" = "ContentExtraction"
+            "Semantic Analysis" = "SemanticAnalysis"
+            "Settings Model" = "SettingsModel"
+            "Execution Provider" = "ExecutionProvider"
+        }
+        $found = @()
+        foreach ($label in $labels.Keys) {
+            $re = $labels[$label]
+            if ($aiPkgs | Where-Object { $_.Name -match $re }) { $found += $label }
+        }
+        if ($found.Count -gt 0) {
+            $parts += "AI components: " + ($found -join ", ")
+        } else {
+            $parts += "On-device AI packages present"
+        }
         Set-ScanStatus $r "Installed"
     }
 
@@ -2795,6 +3063,111 @@ function Scan-WindowsAIComponents {
     } elseif ($consent.Allowed -and $r.Installed) {
         $parts += "Text and image generation on"
         Set-ScanStatus $r "Activated"
+    }
+    if ($r.Installed) {
+        $parts += "Settings > System > AI components"
+    }
+    $r.Details = ($parts | Where-Object { $_ }) -join " | "
+    return $r
+}
+
+function Get-WindowsAiPolicyDword {
+    param([string]$Name)
+    foreach ($root in @(
+        "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI",
+        "HKCU:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI"
+    )) {
+        $v = Get-RegValueSafe -Path $root -Name $Name
+        if ($null -ne $v) {
+            try { return [int]$v } catch { return $null }
+        }
+    }
+    return $null
+}
+
+function Scan-Recall {
+    $r = New-Result "Recall (Windows)"
+    $parts = @()
+    $rawPkgs = @()
+    foreach ($pat in @("*Windows*Recall*", "Microsoft.*Recall*")) {
+        $hit = Get-AppxByName $pat
+        if ($hit) { $rawPkgs += @($hit) }
+    }
+    $pkgs = @($rawPkgs | Where-Object {
+        $_.Name -match '(?i)(Windows.*Recall|Microsoft.*Recall)'
+    } | Select-Object -Unique)
+    $ukp = Join-Path $env:LOCALAPPDATA "CoreAIPlatform.00\UKP"
+    $hasUkp = $false
+    try { $hasUkp = Test-Path -LiteralPath $ukp } catch { $hasUkp = $false }
+
+    if ($pkgs) {
+        $pkg = @($pkgs) | Select-Object -First 1
+        $parts += "App: $($pkg.Name)"
+        if (-not $r.Version) { $r.Version = $pkg.Version }
+    }
+    if ($hasUkp) { $parts += "Snapshot folder present" }
+
+    $allow = Get-WindowsAiPolicyDword "AllowRecallEnablement"
+    $disableSnap = Get-WindowsAiPolicyDword "DisableAIDataAnalysis"
+    $userOn = Get-RegValueSafe -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Recall" -Name "EnableRecall"
+    if ($null -ne $allow) { $parts += "Policy AllowRecallEnablement=$allow" }
+    if ($null -ne $disableSnap) { $parts += "Policy DisableAIDataAnalysis=$disableSnap" }
+    if ($null -ne $userOn) { $parts += "User EnableRecall=$userOn" }
+
+    if (-not $pkgs -and -not $hasUkp) {
+        Set-ScanStatus $r "Not Installed"
+        $r.Details = "No Recall app or snapshot folder"
+        return $r
+    }
+
+    $r.Installed = $true
+    $policyBlocks = ($null -ne $allow -and [int]$allow -eq 0) -or ($null -ne $disableSnap -and [int]$disableSnap -eq 1)
+    $userOff = ($null -ne $userOn -and "$userOn" -eq "0")
+    $userOnFlag = ($null -ne $userOn -and "$userOn" -eq "1")
+
+    if ($policyBlocks -or $userOff) {
+        Set-ScanStatus $r "Deactivated"
+        $parts += "Snapshots off by policy or setting"
+    } elseif ($userOnFlag) {
+        Set-ScanStatus $r "Activated"
+        $parts += "Save snapshots is on"
+    } else {
+        Set-ScanStatus $r "Installed"
+        $parts += "Feature present; Save snapshots not confirmed on"
+    }
+    $r.Details = ($parts | Where-Object { $_ }) -join " | "
+    return $r
+}
+
+function Scan-ClickToDo {
+    $r = New-Result "Click to Do (Windows)"
+    $parts = @()
+    $pkgs = Get-AppxByName "*ClickToDo*"
+    if (-not $pkgs) { $pkgs = Get-AppxByName "*ClickToDoExperience*" }
+    $disable = Get-WindowsAiPolicyDword "DisableClickToDo"
+
+    if ($pkgs) {
+        $pkg = @($pkgs) | Select-Object -First 1
+        $r.Installed = $true
+        $r.Version = $pkg.Version
+        $parts += "App: $($pkg.Name)"
+    }
+
+    # Click to Do ships with Copilot+ / Recall stacks; treat policy + package.
+    if ($null -ne $disable) { $parts += "Policy DisableClickToDo=$disable" }
+
+    if (-not $r.Installed) {
+        Set-ScanStatus $r "Not Installed"
+        $r.Details = "No Click to Do app found"
+        return $r
+    }
+
+    if ($null -ne $disable -and [int]$disable -eq 1) {
+        Set-ScanStatus $r "Deactivated"
+        $parts += "Click to Do off by policy"
+    } else {
+        Set-ScanStatus $r "Installed"
+        $parts += "App present; Settings toggle not read"
     }
     $r.Details = ($parts | Where-Object { $_ }) -join " | "
     return $r
@@ -3673,6 +4046,7 @@ function Set-ScanProgressText {
     param([string]$Text)
     try {
         if ($script:ScanSync) { $script:ScanSync.Status = $Text }
+        if ($script:ChromeRecheckPending) { return }
         if ($Text -and $lblStatus) {
             $lblStatus.Text = $Text
         }
@@ -3884,6 +4258,7 @@ function New-ModelFamilyResult {
         [string]$ProviderNote = ""
     )
     $r = New-Result $DisplayName
+    $r.DisableHint = "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model."
     Set-ScanStatus $r "None Found on Disk"
     $search = Find-ModelFamilyOnDisk -Keywords $Keywords -FamilyName $DisplayName
     if ($search.Found) {
@@ -4034,7 +4409,7 @@ function Scan-Gemma {
 
 
 function Scan-Dolphin {
-    New-ModelFamilyResult -DisplayName "Dolphin (Cognitive Comp.)" -ProviderNote "Cognitive Computations Dolphin instruct family" -Keywords @(
+    New-ModelFamilyResult -DisplayName "Dolphin (Cognitive)" -ProviderNote "Cognitive Computations Dolphin instruct family" -Keywords @(
         '(?i)dolphin-?x1',
         '(?i)dolphin3\.0',
         '(?i)dolphin-?3',
@@ -4251,6 +4626,17 @@ function Scan-MiniMax {
         '(?i)minimax-text',
         '(?i)minimax-vl',
         '(?i)minimax'
+    )
+}
+
+function Scan-MiMo {
+    New-ModelFamilyResult -DisplayName "MiMo V2 (Xiaomi)" -ProviderNote "Xiaomi open-weight family (V2.5 / V2.6 pulls)" -Keywords @(
+        '(?i)mimo-v2\.6',
+        '(?i)mimo-v2\.5',
+        '(?i)mimo-v2',
+        '(?i)mimo_v2',
+        '(?i)xiaomi-mimo',
+        '(?i)xiaomi_mimo'
     )
 }
 
@@ -5739,7 +6125,7 @@ function Get-ScanStepLabel {
         "MistralFamily" = "Mistral / Mixtral (Mistral)"
         "MuseGlimmer" = "Muse Glimmer (Meta)"
         "Nemotron" = "Nemotron 3 (NVIDIA)"
-        "Dolphin" = "Dolphin (Cognitive Comp.)"
+        "Dolphin" = "Dolphin (Cognitive)"
         "Phi" = "Phi-4 (Microsoft)"
         "Qwen" = "Qwen 3 / 4 (Alibaba)"
         "LocalModels" = "Other Local Models"
@@ -5775,14 +6161,66 @@ function Get-ScanStepLabel {
         "TextGenWebUI" = "text-generation-webui"
         "Vllm" = "vLLM"
         "Windsurf" = "Windsurf"
+        "Recall" = "Recall (Windows)"
+        "ClickToDo" = "Click to Do (Windows)"
+        "MiMo" = "MiMo V2 (Xiaomi)"
     }
     if ($map.ContainsKey($key)) { return [string]$map[$key] }
     if ($Hint) { return [string]$Hint }
     return "item"
 }
 
+function Test-FamilyRowWiring {
+    $rows = @(
+        @{ Name = "Qwen 3 / 4 (Alibaba)"; Scan = "Qwen"; Needle = "qwen3" },
+        @{ Name = "Llama 3 / 4 (Meta)"; Scan = "Llama"; Needle = "llama-3" },
+        @{ Name = "DeepSeek R1 / V4 (DeepSeek)"; Scan = "DeepSeek"; Needle = "deepseek" },
+        @{ Name = "Gemma 3 / 4 (Google)"; Scan = "Gemma"; Needle = "gemma" },
+        @{ Name = "Dolphin (Cognitive)"; Scan = "Dolphin"; Needle = "dolphin" },
+        @{ Name = "Phi-4 (Microsoft)"; Scan = "Phi"; Needle = "phi-4" },
+        @{ Name = "Granite 3 / 4 (IBM)"; Scan = "Granite"; Needle = "granite" },
+        @{ Name = "GLM 4.7 / 5 (Zhipu)"; Scan = "GLM"; Needle = "glm" },
+        @{ Name = "Mistral / Mixtral (Mistral)"; Scan = "MistralFamily"; Needle = "mistral" },
+        @{ Name = "GPT-J / Pygmalion"; Scan = "GptJPygmalion"; Needle = "gpt-j" },
+        @{ Name = "gpt-oss (OpenAI)"; Scan = "GptOss"; Needle = "gpt-oss" },
+        @{ Name = "Nemotron 3 (NVIDIA)"; Scan = "Nemotron"; Needle = "nemotron-3" },
+        @{ Name = "Muse Glimmer (Meta)"; Scan = "MuseGlimmer"; Needle = "muse-glimmer" },
+        @{ Name = "Kimi K2 / K3 (Moonshot)"; Scan = "Kimi"; Needle = "kimi" },
+        @{ Name = "Hunyuan 3 / 4 (Tencent)"; Scan = "Hunyuan"; Needle = "hunyuan" },
+        @{ Name = "Ling 3 (Ant)"; Scan = "Ling"; Needle = "ling-3" },
+        @{ Name = "MiniCPM 4 / 5 (ModelBest)"; Scan = "MiniCPM"; Needle = "minicpm" },
+        @{ Name = "MiniMax M2 / M3 (MiniMax)"; Scan = "MiniMax"; Needle = "minimax" },
+        @{ Name = "MiMo V2 (Xiaomi)"; Scan = "MiMo"; Needle = "mimo-v2.5" }
+    )
+    foreach ($row in $rows) {
+        $miss = @()
+        $label = ""
+        try { $label = [string](Get-ScanStepLabel $row.Scan) } catch { $label = "" }
+        if (-not $label -or $label -eq [string]$row.Scan -or $label -like "Scan-*") {
+            $miss += "label"
+        }
+        $run = "No"
+        try {
+            $run = [string](Test-IsRunning -AiName $row.Name -OllamaLoadedModels @($row.Needle))
+        } catch { $run = "No" }
+        if ($run -notlike "Yes*") { $miss += "running" }
+        $claimed = @()
+        try {
+            $claimed = @(Get-LoadedModelsMatching -Loaded @($row.Needle) -Patterns @(Get-KnownFamilyPatterns))
+        } catch { $claimed = @() }
+        if ($claimed -notcontains $row.Needle) { $miss += "patterns" }
+        $hint = ""
+        try { $hint = [string](Get-HowToDisable -Name $row.Name) } catch { $hint = "" }
+        if (-not $hint -or $hint -like "*find this app*") { $miss += "hint" }
+        if ($miss.Count -gt 0) {
+            Write-Log ("LOAD: family wiring miss " + $row.Name + " [" + ($miss -join ",") + "]")
+        }
+    }
+}
+
 # ========== GUI ==========
 Write-Log "LOAD: building window"
+try { Test-FamilyRowWiring } catch { Write-Log "LOAD: family wiring check failed" }
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "$script:AppName v$script:AppVersion Build $script:AppBuild"
@@ -5837,6 +6275,13 @@ $script:LvCache = $null
 $script:ScanRows = @()
 $script:HasScanResults = $false
 $script:ScanBusy = $false
+$script:ScanPass = 0
+$script:ChromeRecheckTimer = $null
+$script:ChromeRecheckPending = $false
+$script:ChromeRecheckStep = 0
+$script:ChromeStatusBaseline = ""
+$script:ScanBeganAt = $null
+$script:LastScanSummary = ""
 $script:GpuFailCount = 0
 
 $btnScan = New-Object System.Windows.Forms.Button
@@ -5967,6 +6412,7 @@ $form.Add_Shown({
 $form.Add_Resize({ try { Move-UpdateControls } catch {} })
 $form.Add_FormClosing({
     # Window is allowed to close. Cancel is set. Leftover scan work must not touch the window.
+    try { Stop-ChromeSettingsRecheck } catch {}
     if ($script:ScanBusy) {
         Request-ScanCancel
         try { Write-Log "SCAN: window closing, cancel requested" } catch {}
@@ -6047,6 +6493,8 @@ function Invoke-ScanFn {
 }
 
 function Get-ScanWorkGroups {
+    # Keep rows inside each group A-Z by the name shown in the list.
+    # Local Models: leftover "Local AI Models" row stays last on purpose.
     return @(
         @{ Header = "Major Apps"; Fns = @(
             { Scan-ChatGPT }, { Scan-Claude }, { Scan-Copilot }, { Scan-GeminiDesktop },
@@ -6055,7 +6503,7 @@ function Get-ScanWorkGroups {
         @{ Header = "Local Models"; Fns = @(
             { Scan-DeepSeek }, { Scan-Dolphin }, { Scan-Gemma }, { Scan-GLM }, { Scan-GptJPygmalion },
             { Scan-GptOss }, { Scan-Granite }, { Scan-Hunyuan }, { Scan-Kimi }, { Scan-Ling },
-            { Scan-Llama }, { Scan-MiniCPM }, { Scan-MiniMax }, { Scan-MistralFamily },
+            { Scan-Llama }, { Scan-MiMo }, { Scan-MiniCPM }, { Scan-MiniMax }, { Scan-MistralFamily },
             { Scan-MuseGlimmer }, { Scan-Nemotron }, { Scan-Phi }, { Scan-Qwen }, { Scan-LocalModels }
         )},
         @{ Header = "Browser-based"; Fns = @(
@@ -6063,8 +6511,8 @@ function Get-ScanWorkGroups {
             { Scan-OperaAI }, { Scan-Comet }
         )},
         @{ Header = "Microsoft Apps"; Fns = @(
-            { Scan-FoundryLocal }, { Scan-GitHubCopilot }, { Scan-M365Copilot },
-            { Scan-NotepadAI }, { Scan-PaintAI }, { Scan-WindowsAIComponents }
+            { Scan-ClickToDo }, { Scan-FoundryLocal }, { Scan-GitHubCopilot }, { Scan-M365Copilot },
+            { Scan-NotepadAI }, { Scan-PaintAI }, { Scan-Recall }, { Scan-WindowsAIComponents }
         )},
         @{ Header = "Other Apps"; Fns = @(
             { Scan-AnythingLLM }, { Scan-ChatRTX }, { Scan-CherryStudio }, { Scan-ClaudeCode },
@@ -6147,9 +6595,11 @@ function Complete-AiScan {
                 if (Test-ScanCanceled) {
                     $lblStatus.Text = "Scan canceled. $summary"
                     Write-Log "Scan canceled. $summary"
+                    $script:LastScanSummary = $lblStatus.Text
                 } else {
                     $lblStatus.Text = "Scan complete. $summary"
                     Write-Log "Scan finished. $summary"
+                    $script:LastScanSummary = $lblStatus.Text
                 }
                 $script:HasScanResults = $true
             }
@@ -6176,6 +6626,9 @@ function Complete-AiScan {
         }
         if (Test-ScanCanceled) { Write-Log "SCAN: canceled" }
         $script:ScanWork = $null
+        if (-not (Test-ScanCanceled) -and $script:HasScanResults) {
+            try { Start-ChromeSettingsRecheck } catch {}
+        }
     }
 }
 
@@ -6325,8 +6778,7 @@ function Step-AiScan {
                         throw $script:LastScanStepError
                     }
                     if ($r) {
-                        $modelRun = Test-IsRunning -AiName $r.Name -OllamaLoadedModels $w.OllamaLoaded -LmStudioLoadedModels $w.LmStudioLoaded -CompatLoadedModels $w.CompatLoaded
-                        $r = Set-RunningAndStatus -Result $r -ModelRunning $modelRun
+                        $r.Running = ""
                         if ($r.Name -like "Ollama*") {
                             if ($w.OllamaLoaded.Count -gt 0) {
                                 $r.Details = (($r.Details + " | Loaded in memory: " + ($w.OllamaLoaded -join ", ")).Trim(" |"))
@@ -6402,8 +6854,12 @@ function Step-AiScan {
 
 function Start-AiScanSession {
     if ($script:ScanBusy) { return }
+    try { Stop-ChromeSettingsRecheck } catch {}
     $script:CancelScan = $false
+    $script:ListenOwnerMap = $null
     $script:ScanBusy = $true
+    $script:ScanPass = [int]$script:ScanPass + 1
+    $script:ScanBeganAt = Get-Date
     if (-not $script:ScanSync) {
         $script:ScanSync = [hashtable]::Synchronized(@{ Cancel = $false })
     }

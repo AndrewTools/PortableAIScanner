@@ -4,6 +4,66 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
+1.7.2  (2026-09-29)
+==============================================================================
+Build: 0100
+
+Added
+- MiMo V2 (Xiaomi) local model row. Uses V2.5 / V2.6 style
+  filenames, not a bare "mimo" name.
+- Recall (Windows) row. Installed if the Recall app or its
+  snapshot folder is present. Activated only when Save
+  snapshots is on. Policy or the user switch off is
+  Deactivated.
+- Click to Do (Windows) row. Installed if the app is present.
+  Policy off is Deactivated. A missing policy is not treated
+  as Activated.
+
+Changed
+- Local model rows tell you to delete the files, or remove
+  the model in Ollama or LM Studio. They do not say
+  Apps > Uninstall. Windows 7 uses that same sentence for
+  family rows and for Other Local Models when leftover
+  files are still on disk.
+- Windows On-Device AI: turn off Text and image generation,
+  then open Settings > System > AI components. Only Image
+  Creation can be removed there if it is listed.
+- Recall looks for the Windows Recall app and the snapshot
+  folder only. Other optional-feature names are ignored.
+- Click to Do is Installed when the app is present. Activated
+  is not assumed from a missing policy.
+- Local Models lists MiMo before MiniCPM and MiniMax (A-Z).
+- Windows 7 includes the MiMo V2 row.
+- Dolphin list name is Dolphin (Cognitive).
+- A local model server is not queried if some other program
+  is using that port.
+- A scan does not keep rechecking the same local ports.
+- Chrome, Edge on-device folders, and Gemini Desktop skip
+  shortcut folders that can freeze the window.
+- Windows On-Device AI Details names Copilot+ components when
+  they are present (Phi Silica, Image Creation, and related
+  packages). Still one row. Details also points to
+  Settings > System > AI components when the row is installed.
+- After Rescan, if Chrome is running, the On-device AI switch
+  is read again at 10 seconds, then at 20 seconds if Status
+  did not change. Those reads are silent. The bar only says
+  Chrome AI switch changed. when Status actually changes.
+  First Scan does not do this. A newer settings file alone
+  is not treated as a toggle.
+- A mimo-v2 model loaded in Ollama or LM Studio is Running
+  on the MiMo row, not on Other Local Models.
+- The status bar names Recall (Windows), Click to Do
+  (Windows), and MiMo V2 (Xiaomi) while those rows scan.
+- Running stays empty while rows are still being added.
+  One process list at the end fills Running.
+- Log.txt notes a local model family that is missing How
+  to Disable or Running detection.
+
+Fixed
+- Chrome follow-up no longer uses a settings-file timestamp
+  as the reason to check again.
+
+==============================================================================
 1.7.1  (2026-09-28)
 ==============================================================================
 Build: 0070

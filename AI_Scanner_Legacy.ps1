@@ -3,7 +3,8 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.7.1"
+$script:AppVersion = "1.7.2"
+$script:AppBuild = "0100"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
@@ -23,7 +24,7 @@ function Ensure-LogFile {
 Portable AI Scanner Log
 ====================
 Started : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-Version : $($script:AppVersion) (Windows 7 legacy)
+Version : $($script:AppVersion) Build $($script:AppBuild) (Windows 7 legacy)
 Windows : $win
 Script  : $($MyInvocation.MyCommand.Path)
 Folder  : $script:LogDir
@@ -64,7 +65,7 @@ function Initialize-Log {
 Portable AI Scanner Log
 ====================
 Started : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
-Version : $($script:AppVersion) (Windows 7 legacy)
+Version : $($script:AppVersion) Build $($script:AppBuild) (Windows 7 legacy)
 Windows : $win
 Script  : $($MyInvocation.MyCommand.Path)
 Folder  : $script:LogDir
@@ -429,6 +430,7 @@ function Initialize-ModelNameIndex {
 function Find-Family {
     param([string]$DisplayName, [string[]]$Keywords, [string[]]$Exclude = @())
     $r = New-Result $DisplayName
+    $r.DisableHint = "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model."
     Initialize-ModelNameIndex
     if (-not $script:ClaimedModelNames) { $script:ClaimedModelNames = @{} }
     $hits = @()
@@ -467,7 +469,6 @@ function Find-Family {
         $detail = "Files or folders: " + $sample
         if ($lab.Count -gt 0) { $detail = $detail + " | Labels: " + ($lab -join ", ") }
         Set-Installed $r "Installed" $detail ""
-        $r.DisableHint = "Open the app that downloaded this model (Ollama, LM Studio, GPT4All, or Jan) and remove the model. Or Control Panel > Programs and Features > uninstall that app."
     } else {
         $r.Activated = "None Found on Disk"
         $r.Details = "No matching model files in common folders"
@@ -503,7 +504,7 @@ function Scan-LocalSummary {
         if ($joined -match '(?i)whiterabbitneo|white-?rabbit-?neo') { $lab += 'whiterabbitneo' }
         if ($lab.Count -gt 0) { $detail = $detail + " | Labels: " + ($lab -join ", ") }
         Set-Installed $r "Installed" $detail ""
-        $r.DisableHint = "Open Ollama, LM Studio, GPT4All, or Jan and remove models. Or uninstall that app from Control Panel."
+        $r.DisableHint = "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model."
     } else {
         $r.Activated = "None Found on Disk"
         $r.Details = "No leftover GGUF, safetensors, or ggml files in common model folders"
@@ -528,7 +529,7 @@ function Scan-BrowserExe {
 Write-Log "LOAD: building window"
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "$script:AppName v$script:AppVersion"
+$form.Text = "$script:AppName v$script:AppVersion Build $script:AppBuild"
 $form.Size = New-Object System.Drawing.Size(900, 640)
 $form.MinimumSize = New-Object System.Drawing.Size(700, 500)
 $form.StartPosition = "CenterScreen"
@@ -694,6 +695,8 @@ $btnScan.Add_Click({
     Write-Log "SCAN: Windows 7 legacy scan started"
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     try {
+    # Keep rows inside each group A-Z by the name shown in the list.
+    # Local Models: leftover "Other Local Models" row stays last on purpose.
     $jobs = @(
         @{ Title = "Major Apps"; Fn = {
             Scan-ByExeOrUninstall -Name "Ollama" -Exes @(
@@ -702,7 +705,7 @@ $btnScan.Add_Click({
             ) -UninstallPatterns @("Ollama*") -ProcessNames @("ollama","ollama app")
         }},
         @{ Title = "Local Models"; Fn = { Find-Family "DeepSeek R1 / V4 (DeepSeek)" @('(?i)deepseek','(?i)r1-distill') }},
-        @{ Title = ""; Fn = { Find-Family "Dolphin (Cognitive Comp.)" @('(?i)dolphin','(?i)dolphincoder') }},
+        @{ Title = ""; Fn = { Find-Family "Dolphin (Cognitive)" @('(?i)dolphin','(?i)dolphincoder') }},
         @{ Title = ""; Fn = { Find-Family "Gemma 3 / 4 (Google)" @('(?i)translategemma','(?i)functiongemma','(?i)medgemma','(?i)gemma-?[234]','(?i)gemma[234]') }},
         @{ Title = ""; Fn = { Find-Family "GLM 4.7 / 5 (Zhipu)" @('(?i)glm-?[45]','(?i)chatglm') }},
         @{ Title = ""; Fn = { Find-Family "GPT-J / Pygmalion" @('(?i)gpt-?j','(?i)pygmalion') }},
@@ -715,6 +718,7 @@ $btnScan.Add_Click({
         @{ Title = ""; Fn = { Find-Family "Hunyuan 3 / 4 (Tencent)" @('(?i)hunyuan','(?i)tencent-hunyuan') }},
         @{ Title = ""; Fn = { Find-Family "Kimi K2 / K3 (Moonshot)" @('(?i)kimi-k','(?i)moonshot-kimi','(?i)moonshotai') }},
         @{ Title = ""; Fn = { Find-Family "Ling 3 (Ant)" @('(?i)ling-3','(?i)ling3\.0','(?i)inclusionai-ling','(?i)inclusionai') }},
+        @{ Title = ""; Fn = { Find-Family "MiMo V2 (Xiaomi)" @('(?i)mimo-v2','(?i)xiaomi-mimo','(?i)xiaomi/mimo') }},
         @{ Title = ""; Fn = { Find-Family "MiniCPM 4 / 5 (ModelBest)" @('(?i)minicpm') }},
         @{ Title = ""; Fn = { Find-Family "MiniMax M2 / M3 (MiniMax)" @('(?i)minimax') }},
         @{ Title = ""; Fn = { Find-Family "Muse Glimmer (Meta)" @('(?i)muse-glimmer','(?i)muse_glimmer','(?i)museglimmer','(?i)glimmer-30b','(?i)muse-spark','(?i)muse_spark','(?i)musespark') }},
