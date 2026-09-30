@@ -4,6 +4,30 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
+1.7.3  (2026-09-29)
+==============================================================================
+Build: 0108
+
+Changed
+- The list of local AI ports and the Windows Apps list
+  are built in the background before rows appear. The
+  window stays usable while those lists fill.
+- The background model-file check also reads Ollama's
+  installed name list from the local app.
+- Starting the exe a second time brings the open window
+  forward. If no window appears, you can ask the other
+  copy to close. That only closes this app's other
+  starter windows, then you can use Task Manager.
+- A second start ignores message boxes titled only
+  Portable AI Scanner. It looks for the scanner window.
+- Cherry Studio shows Running only when that app is
+  the process that is open.
+- Local llama.cpp, Kobold, and LocalAI show Running when
+  that app is open, even if Windows does not list the
+  file path at first.
+- The exe shows the version number in Windows Properties.
+
+==============================================================================
 1.7.2  (2026-09-29)
 ==============================================================================
 Build: 0100
@@ -89,8 +113,7 @@ Changed
 Fixed
 - GPU background start no longer skips a new query when the last one
   already finished.
-- Unused GitHub latest-release helper removed. Check for update uses
-  the background fetch only.
+- Check for update uses the background check only.
 
 ==============================================================================
 1.7.0  (2026-09-27)

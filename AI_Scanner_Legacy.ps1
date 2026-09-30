@@ -3,8 +3,8 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.7.2"
-$script:AppBuild = "0100"
+$script:AppVersion = "1.7.3"
+$script:AppBuild = "0108"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }

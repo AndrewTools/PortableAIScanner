@@ -7,8 +7,8 @@
 # That is not a missing function closer. Count braces outside strings.
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.7.2"
-$script:AppBuild = "0100"
+$script:AppVersion = "1.7.3"
+$script:AppBuild = "0108"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -474,8 +474,7 @@ function Read-NotepadSettingsDatFile {
     return $null
 }
 
-function Get-LoopbackListenOwnerMap {
-    if ($null -ne $script:ListenOwnerMap) { return $script:ListenOwnerMap }
+function New-LoopbackListenOwnerMap {
     $map = @{}
     try {
         $conns = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue)
@@ -487,17 +486,22 @@ function Get-LoopbackListenOwnerMap {
             try { $lp = [int]$c.LocalPort } catch { continue }
             if ($lp -le 0) { continue }
             if ($map.ContainsKey($lp)) { continue }
-            $pid = 0
-            try { $pid = [int]$c.OwningProcess } catch { continue }
-            if ($pid -le 0) { continue }
+            $ownPid = 0
+            try { $ownPid = [int]$c.OwningProcess } catch { continue }
+            if ($ownPid -le 0) { continue }
             try {
-                $pr = Get-Process -Id $pid -ErrorAction SilentlyContinue
+                $pr = Get-Process -Id $ownPid -ErrorAction SilentlyContinue
                 if ($pr) { $map[$lp] = [string]$pr.ProcessName }
             } catch {}
         }
     } catch {}
-    $script:ListenOwnerMap = $map
     return $map
+}
+
+function Get-LoopbackListenOwnerMap {
+    if ($null -ne $script:ListenOwnerMap) { return $script:ListenOwnerMap }
+    $script:ListenOwnerMap = New-LoopbackListenOwnerMap
+    return $script:ListenOwnerMap
 }
 
 function Test-LoopbackListenOwnerName {
@@ -571,7 +575,7 @@ function Test-LocalLlmServerProcess {
         $pp = ""
         try { $n = [string]$p.ProcessName } catch {}
         if ($n -notlike "llama-server*" -and $n -notlike "koboldcpp*" -and $n -notlike "local-ai*" -and $n -notlike "localai*") { continue }
-        try { $pp = [string]$p.Path } catch {}
+        $pp = Get-ProcessImageHint $p
         if (-not $pp) { continue }
         if ($pp -match '(?i)llama-server\.exe|llama\.cpp|koboldcpp|local-ai\.exe|localai\.exe') { return $true }
     }
@@ -1183,7 +1187,7 @@ function Test-ProductProcessOpen {
         "Open WebUI*" { $patterns = @() }
         default { $patterns = @() }
     }
-    $needPath = ($Name -like "Jan*" -or $Name -like "Claude*" -or $Name -like "Foundry Local*" -or $Name -like "ComfyUI*" -or $Name -like "Cursor*" -or $Name -eq "Copilot (Microsoft)" -or $Name -like "Microsoft 365 Copilot*" -or $Name -like "ChatRTX*" -or $Name -like "ChatGPT*" -or $Name -like "Grok*" -or $Name -like "Ollama*" -or $Name -eq "Perplexity" -or $Name -like "LM Studio*" -or $Name -like "AnythingLLM*" -or $Name -like "Windsurf*" -or $Name -like "Msty*" -or $Name -like "GPT4All*" -or $Name -like "llama.cpp*" -or $Name -like "Llamafile*" -or $Name -like "LocalAI*" -or $Name -like "KoboldCPP*")
+    $needPath = ($Name -like "Jan*" -or $Name -like "Claude*" -or $Name -like "Foundry Local*" -or $Name -like "ComfyUI*" -or $Name -like "Cursor*" -or $Name -eq "Copilot (Microsoft)" -or $Name -like "Microsoft 365 Copilot*" -or $Name -like "ChatRTX*" -or $Name -like "ChatGPT*" -or $Name -like "Grok*" -or $Name -like "Ollama*" -or $Name -eq "Perplexity" -or $Name -like "LM Studio*" -or $Name -like "AnythingLLM*" -or $Name -like "Windsurf*" -or $Name -like "Msty*" -or $Name -like "GPT4All*" -or $Name -like "llama.cpp*" -or $Name -like "Llamafile*" -or $Name -like "LocalAI*" -or $Name -like "KoboldCPP*" -or $Name -like "Cherry Studio*")
     foreach ($pat in $patterns) {
         if (-not $pat) { continue }
         try {
@@ -1276,6 +1280,8 @@ function Test-ProcessPathMatchesProduct {
             if ($pp -match '(?i)\\Windsurf\\Windsurf\.exe$' -or $pp -match '(?i)\\Programs\\Windsurf\\') { return $true }
         } elseif ($Name -like "Msty*") {
             if ($pp -match '(?i)\\Msty\\Msty\.exe$' -or $pp -match '(?i)\\Programs\\[Mm]sty\\') { return $true }
+        } elseif ($Name -like "Cherry Studio*") {
+            if ($pp -match '(?i)\\Cherry Studio\\' -or $pp -match '(?i)\\CherryStudio\\' -or $pp -match '(?i)Cherry Studio\.exe$' -or $pp -match '(?i)CherryStudio\.exe$') { return $true }
         } elseif ($Name -like "GPT4All*") {
             if ($pp -match '(?i)\\GPT4All\\' -or $pp -match '(?i)\\gpt4all\\' -or $pp -match '(?i)nomic\.ai\\GPT4All' -or $pp -match '(?i)gpt4all\.exe$') { return $true }
         } elseif ($Name -like "llama.cpp*") {
@@ -4648,24 +4654,29 @@ function Get-FoundryUninstallInfo {
 }
 
 
+function New-UninstallAppsCache {
+    $cache = New-Object System.Collections.ArrayList
+    $keys = @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+    )
+    foreach ($key in $keys) {
+        try {
+            $items = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+            foreach ($item in $items) {
+                if (-not $item.DisplayName) { continue }
+                [void]$cache.Add($item)
+            }
+        } catch {}
+    }
+    return @($cache)
+}
+
 function Get-UninstallApps {
     param([string[]]$NameLike)
     if ($null -eq $script:UninstallAppsCache) {
-        $script:UninstallAppsCache = @()
-        $keys = @(
-            "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
-            "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
-        )
-        foreach ($key in $keys) {
-            try {
-                $items = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
-                foreach ($item in $items) {
-                    if (-not $item.DisplayName) { continue }
-                    $script:UninstallAppsCache += $item
-                }
-            } catch {}
-        }
+        $script:UninstallAppsCache = @(New-UninstallAppsCache)
     }
     $hits = @()
     foreach ($item in @($script:UninstallAppsCache)) {
@@ -5309,6 +5320,42 @@ function Start-PasBackground {
         $script:PasBgHandle = $ps.BeginInvoke()
         return $true
     }
+    if ($Kind -eq "prep") {
+        try {
+            $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+            foreach ($name in @("New-LoopbackListenOwnerMap", "New-UninstallAppsCache")) {
+                $cmd = Get-Command -Name $name -CommandType Function -ErrorAction SilentlyContinue
+                if (-not $cmd) { continue }
+                try {
+                    [void]$iss.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry($cmd.Name, $cmd.Definition)))
+                } catch {}
+            }
+            $rs = [runspacefactory]::CreateRunspace($iss)
+            $rs.ApartmentState = "MTA"
+            $rs.ThreadOptions = "ReuseThread"
+            $rs.Open()
+            $ps = [powershell]::Create()
+            $ps.Runspace = $rs
+            [void]$ps.AddScript({
+                $listen = @{}
+                try { $listen = New-LoopbackListenOwnerMap } catch { $listen = @{} }
+                $apps = @()
+                try { $apps = @(New-UninstallAppsCache) } catch { $apps = @() }
+                return [pscustomobject]@{
+                    ListenMap = $listen
+                    Uninstall = @($apps)
+                }
+            })
+            $script:PasBgPS = $ps
+            $script:PasBgRunspace = $rs
+            $script:PasBgHandle = $ps.BeginInvoke()
+            return $true
+        } catch {
+            Write-ErrorLog "Background prep failed to start" -ErrorRecord $_
+            Stop-PasBackground
+            return $false
+        }
+    }
     if ($Kind -ne "index") { return $false }
     try {
         $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
@@ -5316,7 +5363,8 @@ function Start-PasBackground {
             "Initialize-ModelNameIndex","Get-DedupedModelRoots","Get-ModelStorageRoots","Get-IndexFolderLabel",
             "Get-OllamaInstalledTags","Test-ScanCanceled","Set-ScanProgressText",
             "Write-Log","Write-ErrorLog","Ensure-LogFile","Initialize-Log",
-            "Convert-LocalHttpJson","Get-LocalHttpResponse","Test-LocalPortOpen","Test-LocalAiPortAllowed","Test-PathAny"
+            "Convert-LocalHttpJson","Get-LocalHttpResponse","Test-LocalPortOpen","Test-LocalAiPortAllowed","Test-PathAny",
+            "Get-LoopbackListenOwnerMap","Test-LoopbackListenOwnerName","Test-PortOwnerMatchesProduct","Get-KnownCommandSource"
         )
         foreach ($name in $need) {
             $cmd = Get-Command -Name $name -CommandType Function -ErrorAction SilentlyContinue
@@ -5331,12 +5379,15 @@ function Start-PasBackground {
         $rs.Open()
         $ps = [powershell]::Create()
         $ps.Runspace = $rs
+        $listenMap = $script:ListenOwnerMap
+        if ($null -eq $listenMap) { $listenMap = @{} }
         [void]$ps.AddScript({
-            param($Sync, $LogDir, $LogPath)
+            param($Sync, $LogDir, $LogPath, $ListenMap)
             $script:ScanSync = $Sync
             $script:CancelScan = [bool]$Sync.Cancel
             $script:LogDir = $LogDir
             $script:LogPath = $LogPath
+            $script:ListenOwnerMap = $ListenMap
             $script:ModelNameIndex = $null
             $script:ModelGgufCount = 0
             $script:ModelGgufRoots = @()
@@ -5348,7 +5399,7 @@ function Start-PasBackground {
                 GgufRoots   = @($script:ModelGgufRoots)
                 Incomplete  = [bool]$script:ModelIndexIncomplete
             }
-        }).AddArgument($sync).AddArgument($script:LogDir).AddArgument($script:LogPath)
+        }).AddArgument($sync).AddArgument($script:LogDir).AddArgument($script:LogPath).AddArgument($listenMap)
         $script:PasBgPS = $ps
         $script:PasBgRunspace = $rs
         $script:PasBgHandle = $ps.BeginInvoke()
@@ -6656,6 +6707,40 @@ function Step-AiScan {
                 $script:ProcSnap = $null
                 $script:ProcImageHint = @{}
                 try { $script:ProcSnap = @(Get-Process -ErrorAction SilentlyContinue) } catch { $script:ProcSnap = @() }
+                $w.Phase = "prep"
+            }
+            "prep" {
+                $lblStatus.Text = "Checking installed programs..."
+                Set-ScanBarEnd -Percent 4
+                if (-not $w.BgKind) {
+                    if (Start-PasBackground -Kind "prep") {
+                        $w.BgKind = "prep"
+                        return
+                    }
+                    try { $script:ListenOwnerMap = New-LoopbackListenOwnerMap } catch { $script:ListenOwnerMap = @{} }
+                    try { $script:UninstallAppsCache = @(New-UninstallAppsCache) } catch { $script:UninstallAppsCache = @() }
+                    $w.Phase = "appx"
+                    return
+                }
+                $bg = Read-PasBackground
+                if (-not $bg.Done) { return }
+                $prep = $null
+                if (-not $bg.Failed -and $bg.Result -and @($bg.Result).Count -gt 0) { $prep = @($bg.Result)[-1] }
+                if ($prep -and $prep.PSObject.Properties.Name -contains "ListenMap") {
+                    $script:ListenOwnerMap = $prep.ListenMap
+                    if ($null -eq $script:ListenOwnerMap) { $script:ListenOwnerMap = @{} }
+                    try { $script:UninstallAppsCache = @($prep.Uninstall) } catch { $script:UninstallAppsCache = @() }
+                } else {
+                    try { $script:ListenOwnerMap = New-LoopbackListenOwnerMap } catch { $script:ListenOwnerMap = @{} }
+                    try { $script:UninstallAppsCache = @(New-UninstallAppsCache) } catch { $script:UninstallAppsCache = @() }
+                }
+                $w.BgKind = $null
+                try {
+                    $nListen = 0
+                    if ($script:ListenOwnerMap) { $nListen = @($script:ListenOwnerMap.Keys).Count }
+                    $nApps = @($script:UninstallAppsCache).Count
+                    Write-Log ("SCAN: local-port list $nListen, Apps list $nApps")
+                } catch {}
                 $w.Phase = "appx"
             }
             "appx" {
@@ -6709,7 +6794,6 @@ function Step-AiScan {
                     $script:ModelGgufRoots = @()
                     $script:ClaimedModelNames = @{}
                     $script:SystemAiConsentCache = $null
-                    $script:UninstallAppsCache = $null
                     if (Start-PasBackground -Kind "index") {
                         $w.BgKind = "index"
                         return
@@ -6857,6 +6941,7 @@ function Start-AiScanSession {
     try { Stop-ChromeSettingsRecheck } catch {}
     $script:CancelScan = $false
     $script:ListenOwnerMap = $null
+    $script:UninstallAppsCache = $null
     $script:ScanBusy = $true
     $script:ScanPass = [int]$script:ScanPass + 1
     $script:ScanBeganAt = Get-Date

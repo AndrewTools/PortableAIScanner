@@ -1,13 +1,8 @@
 Portable AI Scanner
 ===================
 
-A portable Windows app that lists AI apps, browser AI features, and
-local models on this PC. It does not install anything or turn
-anything off.
-
-This file is for people who run the app. It is not a developer
-document. Do not add feature lists, audit notes, or extra
-explanations here.
+Lists AI apps, browser AI, and local models on this PC.
+It does not install anything or turn anything off.
 
 License: All rights reserved. You may run this app on your own PC.
 You may not modify or republish it.
@@ -15,7 +10,7 @@ You may not modify or republish it.
 You run it at your own risk. Windows may warn that the app is
 unsigned.
 
-Current version: 1.7.2 Build 0100
+Current version: 1.7.3 Build 0108
 
 
 What to put in the folder
@@ -40,17 +35,14 @@ If you do not have the exe:
 How to scan
 -----------
   1. Double-click PortableAIScanner.exe.
+     If a window is already open, that start brings it forward.
   2. Click Scan.
   3. After the scan, Detected hides gray rows. Export list saves
      the visible list as a CSV file.
   4. Click Rescan to scan again. Click Cancel to stop a scan.
 
-How to disable is blank when Status is Deactivated or Unknown,
-or when that row has no AI to turn off.
-
-A second launch of the exe or the script asks you to close the
-window that is already open. Starting the exe and then the .ps1
-(or the other way around) also asks you to close the first window.
+How to disable is blank when that AI is already off, unread,
+or not there to turn off.
 
 On Windows 10/11, Check for update looks up the latest version.
 It does not download files.
@@ -60,7 +52,7 @@ Colors
 ------
   - Red     The app is open and AI is on, or a local model is loaded
   - Blue    AI is on or a model is loaded, and the app is closed
-  - Green   Turned off, AI unread, or a known browser exe is running with no install path
+  - Green   AI is off or unread
   - Gray    Not installed, or this browser version has no AI
 
 
