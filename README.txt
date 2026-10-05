@@ -10,7 +10,7 @@ You may not modify or republish it.
 You run it at your own risk. Windows may warn that the app is
 unsigned.
 
-Current version: 1.7.3 Build 0108
+Current version: 1.7.4 Build 0153
 
 
 What to put in the folder

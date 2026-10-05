@@ -3,8 +3,8 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.7.3"
-$script:AppBuild = "0108"
+$script:AppVersion = "1.7.4"
+$script:AppBuild = "0153"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
@@ -165,20 +165,42 @@ function Test-ParentIsScannerExe {
 }
 
 function Test-WrapperMutexHeld {
+    # A leftover lock from a starter that already exited is not a running copy.
+    # Take it. If Windows says the last owner exited, release it and continue.
     $m = $null
+    $created = $false
     try {
-        $m = [System.Threading.Mutex]::OpenExisting("Local\PortableAIScanner")
+        $m = New-Object System.Threading.Mutex($true, "Local\PortableAIScanner", [ref]$created)
+        if ($created) {
+            try { $m.ReleaseMutex() } catch {}
+            try { $m.Dispose() } catch {}
+            return $false
+        }
+        try { $m.Dispose() } catch {}
         return $true
-    } catch {
+    } catch [System.Threading.AbandonedMutexException] {
+        $owned = $_.Exception.Mutex
+        if ($owned) {
+            try { $owned.ReleaseMutex() } catch {}
+            try { $owned.Dispose() } catch {}
+        }
         return $false
-    } finally {
-        if ($m) { try { $m.Dispose() } catch {} }
+    } catch {
+        return "failed"
     }
 }
 
 $script:InstanceMutex = $null
 if (-not (Test-ParentIsScannerExe)) {
-    if (Test-WrapperMutexHeld) {
+    $wrap = Test-WrapperMutexHeld
+    if ($wrap -eq "failed") {
+        Write-Log "LOAD: starter lock was not returned"
+        [System.Windows.Forms.MessageBox]::Show(
+            "The last copy closed badly. Start Portable AI Scanner again.",
+            "Portable AI Scanner", "OK", "Information") | Out-Null
+        exit 3
+    }
+    if ($wrap) {
         Write-Log "LOAD: wrapper instance is already running"
         [System.Windows.Forms.MessageBox]::Show(
             "Portable AI Scanner is already running. Close that window before starting it again.",
@@ -197,8 +219,47 @@ try {
         exit 2
     }
     Write-Log "LOAD: single-instance lock taken"
+} catch [System.Threading.AbandonedMutexException] {
+    $owned = $_.Exception.Mutex
+    $held = $false
+    if (-not $owned) {
+        $created2 = $false
+        try {
+            $retry = New-Object System.Threading.Mutex($true, "Local\PortableAIScanner.Script", [ref]$created2)
+            if ($created2) { $owned = $retry }
+            else {
+                $held = $true
+                try { $retry.Dispose() } catch {}
+            }
+        } catch [System.Threading.AbandonedMutexException] {
+            $owned = $_.Exception.Mutex
+        } catch {
+            $owned = $null
+        }
+    }
+    if ($held) {
+        Write-Log "LOAD: another instance is already running"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Portable AI Scanner is already running. Close that window before starting it again.",
+            "Portable AI Scanner", "OK", "Information") | Out-Null
+        exit 2
+    }
+    if ($owned) {
+        $script:InstanceMutex = $owned
+        Write-Log "LOAD: leftover script lock kept; continuing"
+    } else {
+        Write-Log "LOAD: leftover script lock was not returned"
+        [System.Windows.Forms.MessageBox]::Show(
+            "The last copy closed badly. Start Portable AI Scanner again.",
+            "Portable AI Scanner", "OK", "Information") | Out-Null
+        exit 3
+    }
 } catch {
-    Write-Log "LOAD: mutex check failed (continuing)"
+    Write-Log "LOAD: mutex check failed"
+    [System.Windows.Forms.MessageBox]::Show(
+        "The last copy closed badly. Start Portable AI Scanner again.",
+        "Portable AI Scanner", "OK", "Information") | Out-Null
+    exit 3
 }
 
 function New-Result {
@@ -716,8 +777,8 @@ $btnScan.Add_Click({
         @{ Title = ""; Fn = { Find-Family "Qwen 3 / 4 (Alibaba)" @('(?i)qwen') }},
         @{ Title = ""; Fn = { Find-Family "Granite 3 / 4 (IBM)" @('(?i)ibm-granite','(?i)granite-?[34]','(?i)granite[34]','(?i)granite-code','(?i)granite-guardian') }},
         @{ Title = ""; Fn = { Find-Family "Hunyuan 3 / 4 (Tencent)" @('(?i)hunyuan','(?i)tencent-hunyuan') }},
-        @{ Title = ""; Fn = { Find-Family "Kimi K2 / K3 (Moonshot)" @('(?i)kimi-k','(?i)moonshot-kimi','(?i)moonshotai') }},
-        @{ Title = ""; Fn = { Find-Family "Ling 3 (Ant)" @('(?i)ling-3','(?i)ling3\.0','(?i)inclusionai-ling','(?i)inclusionai') }},
+        @{ Title = ""; Fn = { Find-Family "Kimi K2 / K3 (Moonshot)" @('(?i)kimi-k','(?i)moonshot-kimi') }},
+        @{ Title = ""; Fn = { Find-Family "Ling 3 (Ant)" @('(?i)ling-3','(?i)ling3\.0','(?i)inclusionai-ling') }},
         @{ Title = ""; Fn = { Find-Family "MiMo V2 (Xiaomi)" @('(?i)mimo-v2','(?i)xiaomi-mimo','(?i)xiaomi/mimo') }},
         @{ Title = ""; Fn = { Find-Family "MiniCPM 4 / 5 (ModelBest)" @('(?i)minicpm') }},
         @{ Title = ""; Fn = { Find-Family "MiniMax M2 / M3 (MiniMax)" @('(?i)minimax') }},
@@ -755,7 +816,7 @@ $btnScan.Add_Click({
             Scan-ByExeOrUninstall -Name "Jan" -Exes @(
                 "$env:LOCALAPPDATA\Programs\jan\Jan.exe",
                 "$env:LOCALAPPDATA\jan\Jan.exe"
-            ) -UninstallPatterns @("Jan*") -ProcessNames @("Jan")
+            ) -UninstallPatterns @("Jan", "Jan AI*") -ProcessNames @("Jan")
         }},
         @{ Title = ""; Fn = {
             Scan-ByExeOrUninstall -Name "KoboldCPP" -Exes @(
@@ -945,8 +1006,12 @@ $btnExport.Add_Click({
             $cols = @()
             foreach ($si in $item.SubItems) {
                 $t = [string]$si.Text
-                $t = $t.Replace('"', '""')
                 $t = $t -replace "[\r\n]+", " "
+                if ($t.Length -gt 0) {
+                    $ch = $t.Substring(0, 1)
+                    if ($ch -eq "=" -or $ch -eq "+" -or $ch -eq "-" -or $ch -eq "@") { $t = "`t" + $t }
+                }
+                $t = $t.Replace('"', '""')
                 $cols += '"' + $t + '"'
             }
             $lines += ($cols -join ",")

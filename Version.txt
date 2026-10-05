@@ -4,11 +4,117 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
-1.7.3  (2026-09-29)
+1.7.4  (2026-10-01)
 ==============================================================================
-Build: 0108
+Build: 0153
 
 Changed
+- Windows Properties shows the current version.
+- A second start brings forward a window titled Portable AI Scanner
+  with Build or v in the title, including when that window belongs
+  to PowerShell. A message box titled only Portable AI Scanner is
+  left alone.
+- A live window says already running. No lock says the last copy
+  closed badly. This copy stops either way.
+- Chrome Recommended policy is not treated as AI off.
+- Firefox Details keep the real reason.
+- Paint no longer says tools may still be on when Status is
+  Deactivated. Some Paint AI policies off stays Activated and says
+  some tools may still be on. All five off is Deactivated.
+- Paint stays Deactivated when Text and image generation is off.
+  The administrator line stays if a Paint policy is also set.
+- Windows On-Device AI is Activated only when a known AI package
+  is present.
+- Ling and Kimi no longer match other publishers' files.
+- Firefox profile paths are read after the whole section, so an
+  absolute path is not skipped.
+- If Notepad is open and the saved switch was not read, Status is
+  Activated. Details say the saved switch was not read.
+- A log file that is not a Notepad settings file is not used as
+  the switch.
+- Notepad says the file is open only when both reads fail and
+  Notepad is not running.
+- Notepad reads the switch from the saved value, not from nearby
+  letters. A missed value is not treated as off.
+- A missing Notepad switch stays Activated. Unknown is only when
+  Notepad is closed, the settings file is found, and the switch
+  cannot be read.
+- Notepad below 11.2503.16.0 is No AI Features.
+- Notepad does not use the old Copilot registry value or Text and
+  image generation as Status. Writing tools on stays Activated.
+- If an administrator turned Notepad AI off, How to disable says
+  Controlled by your administrator. Otherwise it keeps the Notepad
+  Settings steps.
+- Copilot, Microsoft 365 Copilot, Paint, Recall, Click to Do, and
+  Edge say Controlled by your administrator when a policy turns
+  them off. Otherwise they keep the Settings steps.
+- Edge policy off wins over the Settings switch. A recommended
+  Edge policy is not an administrator lock.
+- Microsoft 365 Copilot and Paint keep How to disable when Status
+  is Unknown. Edge Unknown stays blank.
+
+Fixed
+- Already running exits as 2. Closed badly exits as 3. The starter
+  logs each one and does not show a second window.
+- A starter lock that cannot be created shows the closed-badly
+  message. A leftover lock that Windows does not hand back stops
+  this copy instead of starting unlocked.
+- Paint reads Text and image generation once, so Details no longer
+  list the same lines twice or leave a double separator.
+- Claude desktop Running matches a Claude folder, AnthropicClaude,
+  and the Store package. Claude Code stays on its own row.
+- Windows 7 does not treat a failed log header as saved.
+- A trailing comma after the last Kimi and Ling name stopped the
+  script from starting. Those commas are gone.
+- If the scanner window does not open, the starter writes the
+  PowerShell error into Log.txt.
+- A crashed script no longer lets a second right-click start. The
+  leftover lock is kept until this copy closes.
+- A crashed starter no longer blocks a right-click of the Windows
+  10/11 script.
+- Windows 7 Ling and Kimi each keep one publisher pattern.
+- Windows 7 export prefixes a tab when a cell starts with =, +, -,
+  or @ so Excel does not treat it as a formula.
+- Windows 7 Jan matches the Jan app name, not every name that
+  starts with Jan.
+- A right-click of the Windows 7 script no longer stops because a
+  closed starter left its lock.
+- A starter that closed badly no longer blocks the next launch
+  until you log off.
+
+==============================================================================
+1.7.3  (2026-09-29)
+==============================================================================
+Build: 0113
+
+Changed
+- Notepad prefers Writing tools over an older RewriteEnabled
+  value when both are in the settings file.
+- Paint stays Deactivated when Text and image generation is
+  off, even if only some Paint policies are set. The
+  administrator line stays if a Paint policy is set.
+- Notepad gear switch in the settings file wins over the
+  old EnableCopilot registry value.
+- Paint says Controlled by your administrator if any
+  Paint AI policy is off. All five off is still Deactivated.
+- Microsoft 365 Copilot and Paint keep How to disable
+  when Status is Unknown. Edge Unknown stays blank.
+- Edge hard policy off wins over the Settings switch.
+  How to disable then says Controlled by your administrator.
+- Edge user off or on keeps the Sidebar and On-device AI steps.
+- Recommended Edge policy is not treated as an administrator lock.
+- Copilot, Microsoft 365 Copilot, Paint, Recall, and
+  Click to Do say Controlled by your administrator
+  when a policy turns them off.
+- Otherwise those rows keep the Settings steps.
+- Text and image generation stays the Privacy path,
+  not the administrator line.
+- Notepad Writing tools on or off is read from the
+  Notepad settings file, not only a normal number.
+- If an administrator turned Notepad AI off, How to
+  disable says Controlled by your administrator.
+- Otherwise How to disable says to turn off Writing
+  tools in Notepad Settings.
 - The list of local AI ports and the Windows Apps list
   are built in the background before rows appear. The
   window stays usable while those lists fill.

@@ -7,8 +7,8 @@
 # That is not a missing function closer. Count braces outside strings.
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.7.3"
-$script:AppBuild = "0108"
+$script:AppVersion = "1.7.4"
+$script:AppBuild = "0153"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -256,14 +256,28 @@ function Test-ParentIsScannerExe {
 }
 
 function Test-WrapperMutexHeld {
+    # A leftover lock from a starter that already exited is not a running copy.
+    # Take it. If Windows says the last owner exited, release it and continue.
     $m = $null
+    $created = $false
     try {
-        $m = [System.Threading.Mutex]::OpenExisting("Local\PortableAIScanner")
+        $m = New-Object System.Threading.Mutex($true, "Local\PortableAIScanner", [ref]$created)
+        if ($created) {
+            try { $m.ReleaseMutex() } catch {}
+            try { $m.Dispose() } catch {}
+            return $false
+        }
+        try { $m.Dispose() } catch {}
         return $true
-    } catch {
+    } catch [System.Threading.AbandonedMutexException] {
+        $owned = $_.Exception.Mutex
+        if ($owned) {
+            try { $owned.ReleaseMutex() } catch {}
+            try { $owned.Dispose() } catch {}
+        }
         return $false
-    } finally {
-        if ($m) { try { $m.Dispose() } catch {} }
+    } catch {
+        return "failed"
     }
 }
 
@@ -273,7 +287,18 @@ $script:InstanceMutex = $null
 # lock. If this is not a confirmed exe child, also refuse when the
 # wrapper lock already exists (exe + right-click .ps1).
 if (-not (Test-ParentIsScannerExe)) {
-    if (Test-WrapperMutexHeld) {
+    $wrap = Test-WrapperMutexHeld
+    if ($wrap -eq "failed") {
+        Write-Log "LOAD: starter lock was not returned"
+        [System.Windows.Forms.MessageBox]::Show(
+            "The last copy closed badly.`r`nStart Portable AI Scanner again.",
+            "Portable AI Scanner",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+        exit 3
+    }
+    if ($wrap) {
         Write-Log "LOAD: wrapper instance is already running"
         [System.Windows.Forms.MessageBox]::Show(
             "Portable AI Scanner is already running.`r`nClose the other window before starting a new one.",
@@ -298,8 +323,53 @@ try {
         exit 2
     }
     Write-Log "LOAD: single-instance lock taken"
+} catch [System.Threading.AbandonedMutexException] {
+    $owned = $_.Exception.Mutex
+    $held = $false
+    if (-not $owned) {
+        $created2 = $false
+        try {
+            $retry = New-Object System.Threading.Mutex($true, "Local\PortableAIScanner.Script", [ref]$created2)
+            if ($created2) { $owned = $retry }
+            else {
+                $held = $true
+                try { $retry.Dispose() } catch {}
+            }
+        } catch [System.Threading.AbandonedMutexException] {
+            $owned = $_.Exception.Mutex
+        } catch {
+            $owned = $null
+        }
+    }
+    if ($held) {
+        Write-Log "LOAD: another instance is already running"
+        [System.Windows.Forms.MessageBox]::Show(
+            "Portable AI Scanner is already running.`r`nClose the other window before starting a new one.",
+            "Portable AI Scanner",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+        exit 2
+    }
+    if ($owned) {
+        $script:InstanceMutex = $owned
+        Write-Log "LOAD: leftover script lock kept; continuing"
+    } else {
+        Write-Log "LOAD: leftover script lock was not returned"
+        [System.Windows.Forms.MessageBox]::Show(
+            "The last copy closed badly.`r`nStart Portable AI Scanner again.",
+            "Portable AI Scanner",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+        exit 3
+    }
 } catch {
-    Write-Log "LOAD: single-instance check failed (non-fatal)"
+    Write-Log "LOAD: single-instance check failed"
+    [System.Windows.Forms.MessageBox]::Show(
+        "The last copy closed badly.`r`nStart Portable AI Scanner again.",
+        "Portable AI Scanner", "OK", "Information") | Out-Null
+    exit 3
 }
 
 # ========== Helpers ==========
@@ -397,7 +467,8 @@ function Get-NewestExistingExe {
             $bestBuild = $bld
         }
     }
-    return $best
+    if ($best) { return $best }
+    return $null
 }
 
 function Get-FileVersionSafe {
@@ -424,7 +495,12 @@ function Read-NotepadSettingsDatFile {
     $bytes = $null
     $fs = $null
     try {
-        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        $share = [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
+        try {
+            $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+        } catch {
+            $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $share)
+        }
         $max = 4194304
         $len = [int][Math]::Min($fs.Length, $max)
         if ($len -lt 8) { return $null }
@@ -444,34 +520,132 @@ function Read-NotepadSettingsDatFile {
         }
     } catch {
         Write-ErrorLog "Notepad settings.dat file read failed" -ErrorRecord $_
-        return $null
+        return [PSCustomObject]@{ Name = ""; Value = $null; Unread = $true }
     } finally {
         if ($fs) { try { $fs.Dispose() } catch {} }
     }
-    $names = @("RewriteEnabled", "CopilotEnabled", "AIFeaturesEnabled", "EnableCopilot", "WritingToolsEnabled", "EnableWritingTools", "WritingTools")
-    foreach ($valName in $names) {
-        $needle = [System.Text.Encoding]::Unicode.GetBytes($valName + [char]0)
-        $limit = $bytes.Length - $needle.Length
-        if ($limit -lt 8) { continue }
-        for ($i = 0; $i -le $limit; $i++) {
-            $matched = $true
-            for ($j = 0; $j -lt $needle.Length; $j++) {
-                if ($bytes[$i + $j] -ne $needle[$j]) { $matched = $false; break }
+    # Unofficial user switch. Microsoft does not publish this name.
+    # settings.dat hive, value RewriteEnabled, type 5f5e10b. Do not reg-load.
+    # Developer notes list RewriteEnabled. Writing tools is the later
+    # on-screen name. A bad byte on that name must not hide RewriteEnabled.
+    $rank = @{
+        WritingToolsEnabled = 1
+        RewriteEnabled = 2
+    }
+    $best = $null
+    $bestRank = 99
+    $sawName = $false
+    $hiveBase = 0
+    if ($bytes.Length -gt 0x1004 -and $bytes[0] -eq 0x72 -and $bytes[1] -eq 0x65 -and $bytes[2] -eq 0x67 -and $bytes[3] -eq 0x66) {
+        $hiveBase = 0x1000
+    }
+    $limit = $bytes.Length - 24
+    for ($i = 4; $i -le $limit; $i++) {
+        if ($bytes[$i] -ne 0x76 -or $bytes[$i + 1] -ne 0x6B) { continue }
+        $nameLen = [BitConverter]::ToUInt16($bytes, $i + 2)
+        if ($nameLen -lt 4 -or $nameLen -gt 64) { continue }
+        $flags = [BitConverter]::ToUInt16($bytes, $i + 16)
+        $ascii = (($flags -band 1) -eq 1)
+        # Name length in the file is bytes for both ASCII and Unicode.
+        $nameBytes = [int]$nameLen
+        if ((-not $ascii) -and (($nameBytes % 2) -ne 0)) { continue }
+        if (($i + 20 + $nameBytes) -gt $bytes.Length) { continue }
+        $valName = ""
+        try {
+            if ($ascii) {
+                $valName = [System.Text.Encoding]::ASCII.GetString($bytes, $i + 20, $nameBytes)
+            } else {
+                $valName = [System.Text.Encoding]::Unicode.GetString($bytes, $i + 20, $nameBytes)
             }
-            if (-not $matched) { continue }
-            $end = [Math]::Min($bytes.Length - 8, $i + $needle.Length + 96)
-            for ($k = $i + $needle.Length; $k -le $end; $k++) {
-                $isDwordType = ($bytes[$k] -eq 4 -and $bytes[$k+1] -eq 0 -and $bytes[$k+2] -eq 0 -and $bytes[$k+3] -eq 0)
-                if ($isDwordType -and ($k + 7) -lt $bytes.Length) {
-                    $val = [BitConverter]::ToUInt32($bytes, $k + 4)
-                    if ($val -eq 0 -or $val -eq 1) {
-                        return [PSCustomObject]@{ Name = $valName; Value = [int]$val }
-                    }
-                }
-            }
+        } catch { continue }
+        $valName = $valName.TrimEnd([char]0)
+        if (-not $rank.ContainsKey($valName)) { continue }
+        $typeAt = [BitConverter]::ToUInt32($bytes, $i + 12)
+        if ($typeAt -ne 0x5f5e10b) { continue }
+        $sawName = $true
+        $thisRank = [int]$rank[$valName]
+        if ($thisRank -ge $bestRank) { continue }
+        $dataLenRaw = [BitConverter]::ToUInt32($bytes, $i + 4)
+        $inline = (($dataLenRaw -band 0x80000000) -ne 0)
+        $dataLen = [int]($dataLenRaw -band 0x7FFFFFFF)
+        $dataField = [BitConverter]::ToUInt32($bytes, $i + 8)
+        $payload = $null
+        if ($inline) {
+            if ($dataLen -lt 1 -or $dataLen -gt 4) { continue }
+            $payload = New-Object byte[] $dataLen
+            [Array]::Copy($bytes, $i + 8, $payload, 0, $dataLen)
+        } else {
+            if ($dataLen -lt 1) { continue }
+            $abs = $hiveBase + [int]$dataField + 4
+            if ($abs -lt 0 -or $abs -ge $bytes.Length) { continue }
+            $payload = New-Object byte[] 1
+            $payload[0] = $bytes[$abs]
+        }
+        $val = -1
+        if ($payload -and $payload.Length -ge 1) {
+            $b = [int]$payload[0]
+            if ($b -eq 0 -or $b -eq 1) { $val = $b }
+        }
+        if ($val -eq 0 -or $val -eq 1) {
+            $best = [PSCustomObject]@{ Name = $valName; Value = $val }
+            $bestRank = $thisRank
+            if ($bestRank -eq 1) { break }
         }
     }
-    return $null
+    if (-not $best) {
+        # Whole value name only. Read the switch from that same record.
+        foreach ($name in @("WritingToolsEnabled", "RewriteEnabled")) {
+            $thisRank = 1
+            if ($name -eq "RewriteEnabled") { $thisRank = 2 }
+            if ($thisRank -ge $bestRank) { continue }
+            foreach ($enc in @([System.Text.Encoding]::Unicode, [System.Text.Encoding]::ASCII)) {
+                $needle = $enc.GetBytes($name)
+                $maxAt = $bytes.Length - $needle.Length
+                for ($at = 20; $at -le $maxAt; $at++) {
+                    $match = $true
+                    for ($k = 0; $k -lt $needle.Length; $k++) {
+                        if ($bytes[$at + $k] -ne $needle[$k]) { $match = $false; break }
+                    }
+                    if (-not $match) { continue }
+                    $vk = $at - 20
+                    if ($bytes[$vk] -ne 0x76 -or $bytes[$vk + 1] -ne 0x6B) { continue }
+                    $nameLen = [int][BitConverter]::ToUInt16($bytes, $vk + 2)
+                    if ($enc -eq [System.Text.Encoding]::Unicode -and (($nameLen % 2) -ne 0)) { continue }
+                    $nullOk = $false
+                    if ($nameLen -eq ($needle.Length + 1) -and $bytes[$at + $needle.Length] -eq 0) { $nullOk = $true }
+                    if ($nameLen -eq ($needle.Length + 2) -and $bytes[$at + $needle.Length] -eq 0 -and $bytes[$at + $needle.Length + 1] -eq 0) { $nullOk = $true }
+                    if ($nameLen -ne $needle.Length -and -not $nullOk) { continue }
+                    if ($bytes[$at - 8] -ne 0x0B -or $bytes[$at - 7] -ne 0xE1 -or $bytes[$at - 6] -ne 0xF5 -or $bytes[$at - 5] -ne 0x05) { continue }
+                    $sawName = $true
+                    $dataLenRaw = [BitConverter]::ToUInt32($bytes, $vk + 4)
+                    $inline = (($dataLenRaw -band 0x80000000) -ne 0)
+                    $dataField = [BitConverter]::ToUInt32($bytes, $vk + 8)
+                    $b = -1
+                    if ($inline) {
+                        $b = [int]$bytes[$vk + 8]
+                    } else {
+                        $abs = $hiveBase + [int]$dataField + 4
+                        if ($abs -ge 0 -and $abs -lt $bytes.Length) { $b = [int]$bytes[$abs] }
+                    }
+                    if ($b -eq 0 -or $b -eq 1) {
+                        $best = [PSCustomObject]@{ Name = $name; Value = $b }
+                        $bestRank = $thisRank
+                        break
+                    }
+                }
+                if ($best -and $bestRank -eq $thisRank) { break }
+            }
+            if ($bestRank -eq 1) { break }
+        }
+    }
+    if ($best) { return $best }
+    if ($sawName) {
+        return [PSCustomObject]@{ Name = ""; Value = $null; Unread = $true }
+    }
+    if ($hiveBase -eq 0x1000) {
+        return [PSCustomObject]@{ Name = ""; Value = $null; Absent = $true }
+    }
+    return [PSCustomObject]@{ Name = ""; Value = $null; Unread = $true }
 }
 
 function New-LoopbackListenOwnerMap {
@@ -641,18 +815,161 @@ function Convert-LocalHttpJson {
     try { return ($c | ConvertFrom-Json) } catch { return $null }
 }
 
+function Get-NotepadPackageSetting {
+    param([string]$PackageFamilyName)
+    if (-not $PackageFamilyName) { return $null }
+    try {
+        $null = [Windows.Management.Core.ApplicationDataManager, Windows.Management.Core, ContentType = WindowsRuntime]
+        $data = [Windows.Management.Core.ApplicationDataManager]::CreateForPackageFamily($PackageFamilyName)
+        if (-not $data) { return $null }
+        $stores = @()
+        try { if ($data.LocalSettings) { $stores += $data.LocalSettings } } catch {}
+        try { if ($data.RoamingSettings) { $stores += $data.RoamingSettings } } catch {}
+        foreach ($store in $stores) {
+            $maps = @()
+            try { if ($store.Values) { $maps += $store.Values } } catch {}
+            try {
+                if ($store.Containers) {
+                    foreach ($c in $store.Containers.Values) { if ($c.Values) { $maps += $c.Values } }
+                }
+            } catch {}
+            foreach ($map in $maps) {
+                foreach ($name in @("WritingToolsEnabled", "RewriteEnabled")) {
+                    $raw = $null
+                    try { $raw = $map.Item($name) } catch { $raw = $null }
+                    if ($null -eq $raw) { continue }
+                    $n = 0
+                    if ($raw -is [bool]) { $n = $(if ($raw) { 1 } else { 0 }) }
+                    elseif (-not [int]::TryParse([string]$raw, [ref]$n)) { continue }
+                    if ($n -eq 0 -or $n -eq 1) {
+                        return [PSCustomObject]@{ Name = $name; Value = $n }
+                    }
+                }
+            }
+        }
+    } catch {}
+    return $null
+}
+
+function Get-NotepadPackageSwitch {
+    param([string]$PackageFamilyName)
+    if (-not $PackageFamilyName) { return $null }
+    try {
+        $null = [Windows.Management.Core.ApplicationDataManager, Windows.Management.Core, ContentType=WindowsRuntime]
+    } catch { return $null }
+    $data = $null
+    try {
+        $data = [Windows.Management.Core.ApplicationDataManager]::CreateForPackageFamily($PackageFamilyName)
+    } catch { return $null }
+    if (-not $data) { return $null }
+    $best = $null
+    $bestRank = 99
+    foreach ($bag in @($data.LocalSettings, $data.RoamingSettings)) {
+        if (-not $bag) { continue }
+        $vals = $null
+        try { $vals = $bag.Values } catch { continue }
+        foreach ($name in @("WritingToolsEnabled", "RewriteEnabled")) {
+            $raw = $null
+            try { $raw = $vals.Item($name) } catch {
+                try { $raw = $vals.Lookup($name) } catch { $raw = $null }
+            }
+            if ($null -eq $raw) { continue }
+            $b = -1
+            if ($raw -is [bool]) {
+                if ($raw) { $b = 1 } else { $b = 0 }
+            } elseif ("$raw" -eq "0" -or "$raw" -eq "1") {
+                $b = [int]$raw
+            }
+            if ($b -ne 0 -and $b -ne 1) { continue }
+            $thisRank = 2
+            if ($name -eq "WritingToolsEnabled") { $thisRank = 1 }
+            if ($thisRank -ge $bestRank) { continue }
+            $best = [PSCustomObject]@{ Name = $name; Value = $b }
+            $bestRank = $thisRank
+        }
+    }
+    return $best
+}
+
 function Get-NotepadRewriteSetting {
-    # In-app toggle is written only after the user opens Notepad Settings.
-    # Read the settings file as bytes. Do not load it as a registry hive.
-    $pkgRoot = "$env:LOCALAPPDATA\Packages"
-    if (-not (Test-Path $pkgRoot)) { return $null }
-    $settingsFile = Get-ChildItem $pkgRoot -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -like "Microsoft.WindowsNotepad_*" } |
-        ForEach-Object { Join-Path $_.FullName "Settings\settings.dat" } |
-        Where-Object { Test-Path $_ } |
-        Select-Object -First 1
-    if (-not $settingsFile) { return $null }
-    return (Read-NotepadSettingsDatFile -Path $settingsFile)
+    param([string]$PackageFamilyName)
+    # User switch is in this app's settings.dat. Microsoft does not publish the name.
+    # Copy first so an open Notepad does not make the file look unread.
+    # A missing byte while Notepad is open is not Unknown. Scan-NotepadAI
+    # sets Activated for that case. Do not put Unknown back.
+    $paths = @()
+    if ($PackageFamilyName) {
+        $paths += (Join-Path $env:LOCALAPPDATA "Packages\$PackageFamilyName\Settings\settings.dat")
+    }
+    $known = Join-Path $env:LOCALAPPDATA "Packages\Microsoft.WindowsNotepad_8wekyb3d8bbwe\Settings\settings.dat"
+    if ($paths -notcontains $known) { $paths += $known }
+    $found = $false
+    $last = $null
+    foreach ($settingsFile in $paths) {
+        if (-not (Test-Path -LiteralPath $settingsFile)) { continue }
+        $found = $true
+        $tmp = Join-Path $env:TEMP ("pas-notepad-" + [guid]::NewGuid().ToString("n") + ".dat")
+        $hit = $null
+        try {
+            $share = [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete
+            $src = $null
+            try {
+                $src = [System.IO.File]::Open($settingsFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+            } catch {
+                $src = [System.IO.File]::Open($settingsFile, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, $share)
+            }
+            $dst = [System.IO.File]::Create($tmp)
+            try { $src.CopyTo($dst) } finally { $dst.Dispose(); if ($src) { $src.Dispose() } }
+            $hit = Read-NotepadSettingsDatFile -Path $tmp
+        } catch {
+            $direct = $null
+            $directThrew = $false
+            try { $direct = Read-NotepadSettingsDatFile -Path $settingsFile } catch { $directThrew = $true }
+            if ($directThrew) {
+                $hit = [PSCustomObject]@{ Name = ""; Value = $null; Unread = $true; Locked = $true }
+            } else {
+                $hit = $direct
+            }
+        } finally {
+            if (Test-Path -LiteralPath $tmp) {
+                try { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue } catch {}
+            }
+        }
+        $hasByte = ($hit -and -not $hit.Unread -and ($hit.Value -eq 0 -or $hit.Value -eq 1))
+        if (-not $hasByte -and $PackageFamilyName) {
+            $live = Get-NotepadPackageSwitch -PackageFamilyName $PackageFamilyName
+            if ($live -and ($live.Value -eq 0 -or $live.Value -eq 1)) { return $live }
+        }
+        if (-not $hasByte) {
+            $win = Get-NotepadPackageSetting -PackageFamilyName $PackageFamilyName
+            if ($win) { return $win }
+            $dir = Split-Path -Parent $settingsFile
+            foreach ($logName in @("settings.dat.LOG1", "settings.dat.LOG2")) {
+                $log = Join-Path $dir $logName
+                if (-not (Test-Path -LiteralPath $log)) { continue }
+                $logHit = $null
+                try {
+                    $sig = New-Object byte[] 4
+                    $lfs = [System.IO.File]::Open($log, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                    try { [void]$lfs.Read($sig, 0, 4) } finally { $lfs.Dispose() }
+                    $isHive = ($sig[0] -eq 0x72 -and $sig[1] -eq 0x65 -and $sig[2] -eq 0x67 -and $sig[3] -eq 0x66)
+                    if ($isHive) { $logHit = Read-NotepadSettingsDatFile -Path $log }
+                } catch { $logHit = $null }
+                if ($logHit -and -not $logHit.Unread -and -not $logHit.Absent -and ($logHit.Value -eq 0 -or $logHit.Value -eq 1)) {
+                    return $logHit
+                }
+            }
+        }
+        if ($hit -and -not $hit.Unread -and -not $hit.Absent) { return $hit }
+        if ($hit) { $last = $hit }
+    }
+    if (-not $found) {
+        return [PSCustomObject]@{ Name = ""; Value = $null; Missing = $true }
+    }
+    $live = Get-NotepadPackageSetting -PackageFamilyName $PackageFamilyName
+    if ($live) { return $live }
+    if ($last) { return $last }
+    return [PSCustomObject]@{ Name = ""; Value = $null; Unread = $true }
 }
 
 function Get-SystemAiConsent {
@@ -729,7 +1046,7 @@ function Get-HowToDisable {
     switch -Wildcard ($Name) {
         "Copilot (Microsoft)" { return "$apps > Copilot > Uninstall. Also Settings > Personalization > Taskbar > turn off Copilot." }
         "Microsoft 365 Copilot*" { return "$apps > Microsoft 365 Copilot > Uninstall. In Word, Excel, or PowerPoint: File > Options > Copilot > turn off Enable Copilot." }
-        "Notepad*" { return "Open Notepad > gear icon (Settings) > AI Features > turn off Copilot / Writing tools." }
+        "Notepad*" { return "Open Notepad > gear icon (Settings) > AI Features > turn off Writing tools." }
         "Paint*" { return "Windows Settings > Privacy & security > Text and image generation > turn off Paint if listed. Paint itself has no simple off switch for every AI tool." }
         "Google Chrome + Gemini*" { return "Open Chrome > three-dot menu > Settings > System > turn off On-device AI." }
         "ChatGPT*" { return "$apps > ChatGPT > Uninstall." }
@@ -1091,15 +1408,13 @@ function Get-KnownFamilyPatterns {
         '(?i)muse-?glimmer',
         '(?i)muse-?spark',
         '(?i)kimi',
-        '(?i)moonshot',
         '(?i)granite',
         '(?i)ibm-granite',
         '(?i)minimax',
         '(?i)minicpm',
         '(?i)hunyuan',
         '(?i)ling-?3',
-        '(?i)inclusionai',
-        '(?i)mimo-v2\.6',
+                '(?i)mimo-v2\.6',
         '(?i)mimo-v2\.5',
         '(?i)mimo-v2',
         '(?i)mimo_v2',
@@ -1247,7 +1562,7 @@ function Test-ProcessPathMatchesProduct {
         } elseif ($Name -like "Claude Code*") {
             if ($pp -match '(?i)\\\.claude\\' -or $pp -match '(?i)Anthropic' -or $pp -match '(?i)Claude Code' -or $pp -match '(?i)\\\.local\\bin\\claude\.exe$') { return $true }
         } elseif ($Name -like "Claude*") {
-            if ($pp -match '(?i)Anthropic' -or $pp -match '(?i)\\Claude\\') { return $true }
+            if ($pp -match '(?i)\\Claude\\' -or $pp -match '(?i)\\AnthropicClaude\\' -or $pp -match '(?i)Anthropic\.Claude') { return $true }
         } elseif ($Name -like "Foundry Local*") {
             if ($pp -match '(?i)FoundryLocal' -or $pp -match '(?i)Foundry Local' -or $pp -match '(?i)Microsoft Foundry') { return $true }
         } elseif ($Name -like "ComfyUI*") {
@@ -1474,7 +1789,7 @@ function Test-IsRunning {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @('(?i)muse-?glimmer', '(?i)muse_glimmer', '(?i)museglimmer', '(?i)muse-?spark', '(?i)spark-1\.[123]')))
         }
         "Kimi*" {
-            return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @('(?i)kimi', '(?i)moonshot')))
+            return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @('(?i)kimi', '(?i)moonshot-kimi')))
         }
         "Granite*" {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @('(?i)granite', '(?i)ibm-granite')))
@@ -1489,7 +1804,7 @@ function Test-IsRunning {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @('(?i)hunyuan')))
         }
         "Ling *" {
-            return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @('(?i)ling-?3', '(?i)inclusionai')))
+            return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @('(?i)ling-?3', '(?i)inclusionai-ling')))
         }
         "MiMo*" {
             return (Format-Yes (Get-LoadedModelsMatching -Loaded $allLoaded -FamilyName $AiName -Patterns @(
@@ -1557,6 +1872,7 @@ function Scan-Copilot {
         }
         if ($turnedOff) {
             Set-ScanStatus $r "Deactivated" "Disabled by policy"
+            $r.DisableHint = "Controlled by your administrator."
         } else {
             Set-ScanStatus $r "Activated" "App present; no policy off"
         }
@@ -1590,36 +1906,56 @@ function Scan-M365Copilot {
         $r.Version = $pkg.Version
         $r.Details = "App: $($pkg.Name)"
         if ($officeExe) { $r.Details += " | Office desktop present" }
-        $off = $false
+        $policyOff = $false
+        $userOff = $false
         $on = $false
         $seen = $false
         foreach ($op in @(
             "HKCU:\Software\Policies\Microsoft\Office\16.0\Common\OfficeAI",
-            "HKLM:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\OfficeAI",
-            "HKCU:\Software\Microsoft\Office\16.0\Common\OfficeAI"
+            "HKLM:\SOFTWARE\Policies\Microsoft\Office\16.0\Common\OfficeAI"
         )) {
             $dis = Get-RegValueSafe -Path $op -Name "DisableOfficeCopilot"
             $en = Get-RegValueSafe -Path $op -Name "EnableCopilot"
             if ($null -ne $dis) {
                 $seen = $true
-                if ("$dis" -eq "1") { $off = $true }
-                elseif ("$dis" -eq "0") { $on = $true }
+                if ("$dis" -eq "1") { $policyOff = $true }
             }
             if ($null -ne $en) {
                 $seen = $true
-                if ("$en" -eq "0") { $off = $true }
+                if ("$en" -eq "0") { $policyOff = $true }
                 elseif ("$en" -eq "1") { $on = $true }
             }
         }
-        if ($off) {
+        $userPath = "HKCU:\Software\Microsoft\Office\16.0\Common\OfficeAI"
+        $dis = Get-RegValueSafe -Path $userPath -Name "DisableOfficeCopilot"
+        $en = Get-RegValueSafe -Path $userPath -Name "EnableCopilot"
+        if ($null -ne $dis) {
+            $seen = $true
+            if ("$dis" -eq "1") { $userOff = $true }
+            elseif ("$dis" -eq "0") { $on = $true }
+        }
+        if ($null -ne $en) {
+            $seen = $true
+            if ("$en" -eq "0") { $userOff = $true }
+            elseif ("$en" -eq "1") { $on = $true }
+        }
+        $userHow = "Windows Settings > Apps > Installed apps > Microsoft 365 Copilot > Uninstall. In Word, Excel, or PowerPoint: File > Options > Copilot > turn off Enable Copilot."
+        if ($policyOff) {
             $r.Details += " | Disabled by policy"
             Set-ScanStatus $r "Deactivated" "Office Copilot policy off"
+            $r.DisableHint = "Controlled by your administrator."
+        } elseif ($userOff) {
+            $r.Details += " | AI off"
+            Set-ScanStatus $r "Deactivated" "Office Copilot off"
+            $r.DisableHint = $userHow
         } elseif ($on) {
             $r.Details += " | AI on"
             Set-ScanStatus $r "Activated" "Office Copilot enabled"
+            $r.DisableHint = $userHow
         } else {
             $r.Details += " | Could not read settings"
             Set-ScanStatus $r "Unknown" "Office Copilot switch not stored"
+            $r.DisableHint = $userHow
         }
     } elseif ($officeExe) {
         $r.Installed = $false
@@ -1646,48 +1982,64 @@ function Scan-NotepadAI {
     $r.Version = $pkg.Version
     $hints = @("App: $($pkg.Name)")
 
+    # Official off switch: HKLM\SOFTWARE\Policies\WindowsNotepad DisableAIFeatures=1
+    # (Microsoft Learn, Notepad 11.2503.16.0+). Microsoft does not publish
+    # the in-app Writing tools value. Do not use EnableCopilot or Text and
+    # image generation as Status.
+    # Do not mark Unknown when Notepad is running and the saved switch was
+    # not read. An open Notepad holds that app hive, so the file can miss
+    # the on or off byte. That case is Activated, and Details must say the
+    # saved switch was not read. Policy off and a saved 0 or 1 still win.
+    # Unknown is only when Notepad is closed and the byte still cannot be read.
     $pol = Get-RegValueSafe -Path "HKLM:\SOFTWARE\Policies\WindowsNotepad" -Name "DisableAIFeatures"
-    $user = Get-RegValueSafe -Path "HKCU:\SOFTWARE\Microsoft\Notepad" -Name "EnableCopilot"
-    $rewrite = Get-NotepadRewriteSetting
+    $family = ""
+    try { $family = [string]$pkg.PackageFamilyName } catch {}
+    $rewrite = Get-NotepadRewriteSetting -PackageFamilyName $family
+    $userHow = "Open Notepad > gear icon (Settings) > AI Features > turn off Writing tools."
+    $adminHow = "Controlled by your administrator."
+    $adminOff = ($null -ne $pol -and [int]$pol -eq 1)
+    $tooOld = $false
+    try {
+        if ($r.Version -and ([version]$r.Version) -lt ([version]"11.2503.16.0")) { $tooOld = $true }
+    } catch {}
+    if ($tooOld) {
+        Set-ScanStatus $r "No AI Features"
+        $hints += "Notepad $($r.Version) has no AI features"
+        $r.Details = $hints -join " | "
+        return $r
+    }
+    $fileUnread = ($rewrite -and $rewrite.Unread)
+    $fileOff = ($rewrite -and -not $fileUnread -and ("$($rewrite.Value)" -eq "0"))
+    $fileOn = ($rewrite -and -not $fileUnread -and ("$($rewrite.Value)" -eq "1"))
 
-    if ($null -ne $pol -and [int]$pol -eq 1) {
+    if ($adminOff) {
         Set-ScanStatus $r "Deactivated"
         $hints += "Disabled by policy"
-    } elseif ($null -ne $user -and [int]$user -eq 0) {
+        $r.DisableHint = $adminHow
+    } elseif ($fileOff) {
         Set-ScanStatus $r "Deactivated"
         $hints += "AI writing tools off"
-    } elseif ($rewrite -and ("$($rewrite.Value)" -eq "0" -or "$($rewrite.Value)" -eq "False")) {
-        Set-ScanStatus $r "Deactivated"
-        $hints += "AI writing tools off"
-    } elseif ($rewrite -and ("$($rewrite.Value)" -eq "1" -or "$($rewrite.Value)" -eq "True")) {
+        $r.DisableHint = $userHow
+    } elseif ($fileOn) {
         Set-ScanStatus $r "Activated"
         $hints += "AI writing tools on"
-    } elseif ($null -ne $user -and [int]$user -eq 1) {
-        Set-ScanStatus $r "Activated"
-        $hints += "AI writing tools on"
-    } else {
-        $consent = Get-SystemAiConsent
-        if ($consent.Denied) {
-            Set-ScanStatus $r "Deactivated"
-            $hints += "Text and image generation off"
-            $hints += ($consent.Signals -join "; ")
-        } elseif ($consent.Allowed) {
+        $r.DisableHint = $userHow
+    } elseif ($fileUnread) {
+        $notepadOpen = $false
+        try { if (Get-Process -Name "Notepad" -ErrorAction SilentlyContinue) { $notepadOpen = $true } } catch {}
+        if ($notepadOpen) {
             Set-ScanStatus $r "Activated"
-            $hints += "Text and image generation allowed"
-            $hints += ($consent.Signals -join "; ")
+            $hints += "Notepad is open and the saved switch was not read"
+            $r.DisableHint = $userHow
         } else {
-            Set-ScanStatus $r "Activated"
-            $hints += "No in-app switch stored; Microsoft default is AI on"
-            if ($consent.Signals.Count -gt 0) { $hints += ($consent.Signals -join "; ") }
+            Set-ScanStatus $r "Unknown"
+            $hints += "Writing tools switch was not read from settings.dat"
+            $r.DisableHint = $userHow
         }
-    }
-    $consent = Get-SystemAiConsent
-    if ($consent.Denied) {
-        $hints += ($consent.Signals -join "; ")
-        if ($r.Activated -ne "Deactivated") {
-            Set-ScanStatus $r "Deactivated"
-            $hints += "Text and image generation off"
-        }
+    } else {
+        Set-ScanStatus $r "Activated"
+        $hints += "Switch never saved; Microsoft default is on"
+        $r.DisableHint = $userHow
     }
     $r.Details = $hints -join " | "
     return $r
@@ -1714,40 +2066,52 @@ function Scan-PaintAI {
         if ($null -ne $v -and [int]$v -eq 1) { $disabled += $n }
         else { $enabledMissing += $n }
     }
+    $privacyHow = "Windows Settings > Privacy & security > Text and image generation > turn off Paint if listed. Paint itself has no simple off switch for every AI tool."
+    $adminHow = "Controlled by your administrator."
+    $consent = Get-SystemAiConsent
     if ($disabled.Count -eq $names.Count) {
         Set-ScanStatus $r "Deactivated"
         $hints += "Disabled by policy"
+        $r.DisableHint = $adminHow
     } elseif ($disabled.Count -gt 0) {
         Set-ScanStatus $r "Activated"
         $hints = @("Some Paint AI tools may still be on") + $hints
         $hints += "Some Paint AI tools off"
+        $r.DisableHint = $adminHow
     } else {
-        $consent = Get-SystemAiConsent
         if ($consent.Denied) {
             Set-ScanStatus $r "Deactivated"
             $hints += "Text and image generation off"
             $hints += ($consent.Signals -join "; ")
+            $r.DisableHint = $privacyHow
         } elseif ($consent.Allowed) {
             Set-ScanStatus $r "Activated"
             $hints += "Text and image generation allowed"
             $hints += ($consent.Signals -join "; ")
+            $r.DisableHint = $privacyHow
         } else {
             Set-ScanStatus $r "Unknown"
             $hints += "AI switch not stored"
             if ($consent.Signals.Count -gt 0) { $hints += ($consent.Signals -join "; ") }
+            $r.DisableHint = $privacyHow
         }
     }
-    $consent = Get-SystemAiConsent
     if ($consent.Denied) {
-        $hints += ($consent.Signals -join "; ")
+        $sig = $consent.Signals -join "; "
+        if ($sig -and ($hints -notcontains $sig)) { $hints += $sig }
         if ($r.Activated -ne "Deactivated") {
             Set-ScanStatus $r "Deactivated"
-            $hints += "Text and image generation off"
+            if ($hints -notcontains "Text and image generation off") { $hints += "Text and image generation off" }
         }
+        if ($disabled.Count -eq 0) { $r.DisableHint = $privacyHow }
     }
     $r.Details = $hints -join " | "
-    if ($disabled.Count -gt 0 -and $disabled.Count -lt $names.Count) {
-        $lead = "Some Paint AI tools may still be on"
+    $lead = "Some Paint AI tools may still be on"
+    if ($r.Activated -eq "Deactivated") {
+        $r.Details = ([string]$r.Details).Replace($lead, "")
+        while ($r.Details -match "\|[ |]*\|") { $r.Details = [regex]::Replace($r.Details, "\|[ |]*\|", "|") }
+        $r.Details = $r.Details.Trim(" |")
+    } elseif ($disabled.Count -gt 0 -and $disabled.Count -lt $names.Count) {
         if ([string]$r.Details -notlike "$lead*") {
             if ($r.Details) { $r.Details = "$lead | $($r.Details)" }
             else { $r.Details = $lead }
@@ -2079,11 +2443,10 @@ function Scan-GeminiChrome {
     $prefTruncated = $false
 
     # --- Policy disable (strongest) ---
+    # Hard Chrome policy only. Recommended is not an administrator lock.
     foreach ($p in @(
         "HKLM:\SOFTWARE\Policies\Google\Chrome",
-        "HKCU:\SOFTWARE\Policies\Google\Chrome",
-        "HKLM:\SOFTWARE\Policies\Google\Chrome\Recommended",
-        "HKCU:\SOFTWARE\Policies\Google\Chrome\Recommended"
+        "HKCU:\SOFTWARE\Policies\Google\Chrome"
     )) {
         try {
             $gs = Get-ItemProperty -Path $p -Name "GeminiSettings" -ErrorAction SilentlyContinue
@@ -2096,6 +2459,18 @@ function Scan-GeminiChrome {
                 $policyDisabled = $true
                 $signals += "Policy GenAILocalFoundationalModelSettings=1 (do not download)"
             }
+        } catch {}
+    }
+    $recommendedOff = @()
+    foreach ($p in @(
+        "HKLM:\SOFTWARE\Policies\Google\Chrome\Recommended",
+        "HKCU:\SOFTWARE\Policies\Google\Chrome\Recommended"
+    )) {
+        try {
+            $gs = Get-ItemProperty -Path $p -Name "GeminiSettings" -ErrorAction SilentlyContinue
+            if ($gs -and $gs.GeminiSettings -eq 1) { $recommendedOff += "Recommended GeminiSettings=1" }
+            $od = Get-ItemProperty -Path $p -Name "GenAILocalFoundationalModelSettings" -ErrorAction SilentlyContinue
+            if ($null -ne $od -and $od.GenAILocalFoundationalModelSettings -eq 1) { $recommendedOff += "Recommended GenAILocalFoundationalModelSettings=1" }
         } catch {}
     }
 
@@ -2167,6 +2542,9 @@ function Scan-GeminiChrome {
         $r.DisableHint = ""
         Set-ScanStatus $r "Deactivated" "On-device AI off"
         $r.Details += " | AI off | $modelDetail"
+    }
+    if ($recommendedOff.Count -gt 0) {
+        $r.Details += " | Recommended policy is not a lock: " + ($recommendedOff -join "; ")
     }
     $content = $null
     Save-ChromeReadStamp -Status $r.Activated
@@ -2685,43 +3063,40 @@ function Scan-EdgeCopilot {
         return $r
     }
 
-    # Policy / feature registry signals for Edge Copilot / sidebar AI
+    # Hard Edge policy only. Recommended is not an administrator lock.
     $activatedHints = @()
-    $disabled = $false
+    $policyOff = $false
     $sidebarOn = $false
+    $userSidebarOff = $false
 
     foreach ($p in @(
         "HKLM:\SOFTWARE\Policies\Microsoft\Edge",
-        "HKCU:\SOFTWARE\Policies\Microsoft\Edge",
-        "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended"
+        "HKCU:\SOFTWARE\Policies\Microsoft\Edge"
     )) {
         try {
             $props = Get-ItemProperty -Path $p -ErrorAction SilentlyContinue
             if (-not $props) { continue }
             if ($null -ne $props.HubsSidebarEnabled -and $props.HubsSidebarEnabled -eq 0) {
-                $disabled = $true
+                $policyOff = $true
                 $activatedHints += "Policy HubsSidebarEnabled=0"
             }
             if ($null -ne $props.CopilotPage -and $props.CopilotPage -eq 0) {
-                $disabled = $true
+                $policyOff = $true
                 $activatedHints += "Policy CopilotPage=0"
             }
             if ($null -ne $props.HubsSidebarEnabled -and $props.HubsSidebarEnabled -eq 1) {
-                $sidebarOn = $true
                 $activatedHints += "Policy HubsSidebarEnabled=1"
             }
             if ($null -ne $props.CopilotPage -and $props.CopilotPage -eq 1) {
-                $sidebarOn = $true
                 $activatedHints += "Policy CopilotPage=1"
             }
         } catch {}
     }
 
     Set-ScanProgressText "Reading Edge settings..."
-    # Edge Preferences: require explicit Copilot/chat keys, not generic "sidebar"
     $prefsRead = $false
     $localStateRead = $false
-    $modelDisabled = $false
+    $userModelOff = $false
     $onDeviceSettingOn = $false
     $prefTruncated = $false
     $edgeDataRoots = @(
@@ -2740,11 +3115,11 @@ function Scan-EdgeCopilot {
                 $sidebarOn = $true
             }
             if ($pr -match '"copilot_page"\s*:\s*false' -or $pr -match '"show_copilot"\s*:\s*false') {
-                $disabled = $true
+                $userSidebarOff = $true
             }
             if ($pr -match '"on_device_foundational_model_user_settings"\s*:\s*false' -or
                 $pr -match '"on_device_ai_user_settings_enabled"\s*:\s*false') {
-                $modelDisabled = $true
+                $userModelOff = $true
                 $localStateRead = $true
             } elseif ($pr -match '"on_device_foundational_model_user_settings"\s*:\s*true' -or
                       $pr -match '"on_device_ai_user_settings_enabled"\s*:\s*true') {
@@ -2755,16 +3130,14 @@ function Scan-EdgeCopilot {
         $pr = $null
     }
 
-    if ($null -eq $modelDisabled) { $modelDisabled = $false }
     foreach ($p in @(
         "HKLM:\SOFTWARE\Policies\Microsoft\Edge",
-        "HKCU:\SOFTWARE\Policies\Microsoft\Edge",
-        "HKLM:\SOFTWARE\Policies\Microsoft\Edge\Recommended"
+        "HKCU:\SOFTWARE\Policies\Microsoft\Edge"
     )) {
         try {
             $od = Get-ItemProperty -Path $p -Name "GenAILocalFoundationalModelSettings" -ErrorAction SilentlyContinue
             if ($null -ne $od -and $od.GenAILocalFoundationalModelSettings -eq 1) {
-                $modelDisabled = $true
+                $policyOff = $true
                 $activatedHints += "Policy GenAILocalFoundationalModelSettings=1 (do not download)"
             }
         } catch {}
@@ -2773,29 +3146,38 @@ function Scan-EdgeCopilot {
     $guide = Get-OptGuideFolderDetail $edgeDataRoots
     $modelDetail = [string]$guide.Detail
     $onDeviceOn = ($onDeviceSettingOn -eq $true)
-    $settingsOff = ($disabled -or $modelDisabled)
+    $settingsOff = ($userSidebarOff -or $userModelOff)
     $settingsOn = ($sidebarOn -or $onDeviceOn)
     $settingsRead = $prefsRead -or $localStateRead
-    $sideTxt = $(if ($sidebarOn) { "Copilot sidebar on" } elseif ($disabled) { "Copilot sidebar off" } else { "Copilot sidebar unknown" })
+    $sideTxt = $(if ($sidebarOn) { "Copilot sidebar on" } elseif ($userSidebarOff) { "Copilot sidebar off" } else { "Copilot sidebar unknown" })
+    $userHow = "Edge Settings > Sidebar > turn off Copilot. Then Settings > System and performance > turn off On-device AI if that switch is listed."
+    $policyNote = ""
+    if ($activatedHints.Count -gt 0) { $policyNote = " | " + ($activatedHints -join "; ") }
 
-    if ($settingsOn) {
+    if ($policyOff) {
+        Set-ScanStatus $r "Deactivated" "Blocked by policy"
+        $r.DisableHint = "Controlled by your administrator."
+        $r.Details += " | AI off | $sideTxt | $modelDetail$policyNote"
+    } elseif ($settingsOn) {
         Set-ScanStatus $r "Activated" "AI on in Settings"
-        $r.Details += " | AI on | $sideTxt | $modelDetail"
+        $r.DisableHint = $userHow
+        $r.Details += " | AI on | $sideTxt | $modelDetail$policyNote"
     } elseif ($settingsOff) {
         Set-ScanStatus $r "Deactivated" "Sidebar or on-device AI turned off"
-        $r.Details += " | AI off | $sideTxt | $modelDetail"
-        if ($guide.HasFiles -or $guide.HasWeights) { $r.DisableHint = "" }
+        $r.DisableHint = $userHow
+        $r.Details += " | AI off | $sideTxt | $modelDetail$policyNote"
     } elseif (-not $settingsRead) {
         Set-ScanStatus $r "Unknown" "Could not read Edge Local State or Preferences"
         $r.DisableHint = ""
-        $r.Details += " | Could not read settings | $modelDetail"
+        $r.Details += " | Could not read settings | $modelDetail$policyNote"
     } elseif ($prefTruncated -and -not $settingsOn -and -not $settingsOff) {
         Set-ScanStatus $r "Unknown" "Edge settings file was too large to read fully"
         $r.DisableHint = ""
-        $r.Details += " | Could not read settings | $modelDetail"
+        $r.Details += " | Could not read settings | $modelDetail$policyNote"
     } else {
         Set-ScanStatus $r "Deactivated" "Edge present; Copilot / on-device AI not enabled"
-        $r.Details += " | AI off | $sideTxt | $modelDetail"
+        $r.DisableHint = $userHow
+        $r.Details += " | AI off | $sideTxt | $modelDetail$policyNote"
     }
     return $r
 }
@@ -3011,7 +3393,8 @@ function Scan-WindowsAIComponents {
     if ($null -eq $script:AllAppx) {
         $script:AllAppx = @(Get-AppxPackage -ErrorAction SilentlyContinue)
     }
-    $aiNameRe = "Windows\.AI|Microsoft\.Windows\.AI|PhiSilica|AionInstruct|WindowsAI|AI\.Model|ImageCreation|ImageGeneration|ImageProcessing|ImageTransform|ImageSearch|ContentExtraction|SemanticAnalysis|SettingsModel|ExecutionProvider"
+    # Known Windows AI packages only. A data folder is not the app.
+    $aiNameRe = "Windows\.AI|Microsoft\.Windows\.AI|PhiSilica|AionInstruct|WindowsAI|AI\.Model|ImageCreation|ImageGeneration|ImageTransform|ContentExtraction|SemanticAnalysis"
     $aiPkgs = @($script:AllAppx | Where-Object { $_.Name -match $aiNameRe })
     $parts = @()
 
@@ -3043,32 +3426,38 @@ function Scan-WindowsAIComponents {
         Set-ScanStatus $r "Installed"
     }
 
+    $knownPackage = [bool]($aiPkgs)
     $possible = @(
         "$env:ProgramData\Microsoft\Windows\AI",
         "$env:LOCALAPPDATA\Microsoft\Windows\AI"
     )
     foreach ($p in $possible) {
         if (Test-Path $p) {
-            $r.Installed = $true
-            if (-not ($parts | Where-Object { $_ -like "App:*" })) { $parts += "App: $p" }
-            else { $parts += "Data folder present" }
+            $parts += "Data folder present: $p"
             break
         }
     }
 
-    if (-not $r.Installed) {
+    if (-not $knownPackage) {
+        $r.Installed = $false
         Set-ScanStatus $r "Not Installed"
-        $parts = @("No Windows On-Device AI app found")
+        if (-not ($parts | Where-Object { $_ -like "Data folder*" })) { $parts = @("No Windows On-Device AI app found") }
+        else { $parts = @("Leftover folder; no app") + @($parts | Where-Object { $_ -like "Data folder*" }) }
     } elseif (-not $r.Activated -or $r.Activated -eq "Not Installed") {
         Set-ScanStatus $r "Installed"
     }
     $consent = Get-SystemAiConsent
-    if ($consent.Denied -and $r.Installed) {
+    $privacyHow = "Windows Settings > Privacy & security > Text and image generation > turn off Windows AI if listed."
+    if ($knownPackage -and $consent.Denied) {
         $parts += "Text and image generation off"
         Set-ScanStatus $r "Deactivated"
-    } elseif ($consent.Allowed -and $r.Installed) {
+        $r.DisableHint = $privacyHow
+    } elseif ($knownPackage -and $consent.Allowed) {
         $parts += "Text and image generation on"
         Set-ScanStatus $r "Activated"
+        $r.DisableHint = $privacyHow
+    } elseif ($knownPackage) {
+        $r.DisableHint = $privacyHow
     }
     if ($r.Installed) {
         $parts += "Settings > System > AI components"
@@ -3131,15 +3520,23 @@ function Scan-Recall {
     $userOff = ($null -ne $userOn -and "$userOn" -eq "0")
     $userOnFlag = ($null -ne $userOn -and "$userOn" -eq "1")
 
-    if ($policyBlocks -or $userOff) {
+    $userHow = "Windows Settings > Privacy & security > Recall & snapshots > turn off Save snapshots."
+    if ($policyBlocks) {
         Set-ScanStatus $r "Deactivated"
-        $parts += "Snapshots off by policy or setting"
+        $parts += "Snapshots off by policy"
+        $r.DisableHint = "Controlled by your administrator."
+    } elseif ($userOff) {
+        Set-ScanStatus $r "Deactivated"
+        $parts += "Save snapshots off"
+        $r.DisableHint = $userHow
     } elseif ($userOnFlag) {
         Set-ScanStatus $r "Activated"
         $parts += "Save snapshots is on"
+        $r.DisableHint = $userHow
     } else {
         Set-ScanStatus $r "Installed"
         $parts += "Feature present; Save snapshots not confirmed on"
+        $r.DisableHint = $userHow
     }
     $r.Details = ($parts | Where-Object { $_ }) -join " | "
     return $r
@@ -3168,12 +3565,15 @@ function Scan-ClickToDo {
         return $r
     }
 
+    $userHow = "Windows Settings > Privacy & security > Recall & snapshots > turn off Click to Do if listed."
     if ($null -ne $disable -and [int]$disable -eq 1) {
         Set-ScanStatus $r "Deactivated"
         $parts += "Click to Do off by policy"
+        $r.DisableHint = "Controlled by your administrator."
     } else {
         Set-ScanStatus $r "Installed"
         $parts += "App present; Settings toggle not read"
+        $r.DisableHint = $userHow
     }
     $r.Details = ($parts | Where-Object { $_ }) -join " | "
     return $r
@@ -3683,16 +4083,24 @@ function Scan-Firefox {
             $profileDirs = @()
             $ini = Join-Path $ffRoot "profiles.ini"
             if (Test-Path $ini) {
-                $isRel = $true
+                $sections = @()
+                $cur = $null
                 foreach ($line in @(Get-Content $ini -ErrorAction SilentlyContinue)) {
-                    if ($line -match '^\s*\[') { $isRel = $true; continue }
-                    if ($line -match '^\s*IsRelative\s*=\s*(\d)') { $isRel = ($Matches[1] -ne '0'); continue }
-                    if ($line -match '^\s*Path\s*=\s*(.+)$') {
-                        $p = $Matches[1].Trim()
-                        if (-not $p) { continue }
-                        if ($isRel) { $p = Join-Path $ffRoot $p }
-                        $profileDirs += $p
+                    if ($line -match '^\s*\[') {
+                        if ($cur) { $sections += $cur }
+                        $cur = @{ Rel = $true; Path = "" }
+                        continue
                     }
+                    if (-not $cur) { $cur = @{ Rel = $true; Path = "" } }
+                    if ($line -match '^\s*IsRelative\s*=\s*(\d)') { $cur.Rel = ($Matches[1] -ne '0'); continue }
+                    if ($line -match '^\s*Path\s*=\s*(.+)$') { $cur.Path = $Matches[1].Trim() }
+                }
+                if ($cur) { $sections += $cur }
+                foreach ($sec in $sections) {
+                    if (-not $sec.Path) { continue }
+                    $p = $sec.Path
+                    if ($sec.Rel) { $p = Join-Path $ffRoot $p }
+                    $profileDirs += $p
                 }
             }
             if ($profileDirs.Count -eq 0 -and (Test-Path $profilesRoot)) {
@@ -3890,15 +4298,8 @@ function Scan-Firefox {
     if ($enabledFlags -contains "browser.ai.control.smartWindow") { $ffOn += "Smart Window" }
     if ($enabledFlags -contains "browser.ai.control.speechRecognition") { $ffOn += "speech recognition" }
     $ffOn = @($ffOn | Select-Object -Unique)
-    $r.Details = "Browser: $exe"
-    switch -Regex ([string]$r.Activated) {
-        "^No AI Features$" { $r.Details += " | This version has no AI" }
-        "^Unknown$" { $r.Details += " | Could not read settings" }
-        "^Deactivated$" { $r.Details += " | AI off" }
-        "^Activated$" {
-            $r.Details += " | AI on"
-            if ($ffOn.Count -gt 0) { $r.Details += ": " + ($ffOn -join ", ") }
-        }
+    if ($ffOn.Count -gt 0 -and [string]$r.Details -notmatch 'On:') {
+        $r.Details += " | On: " + ($ffOn -join ", ")
     }
 
     $disableParts = @()
@@ -4585,8 +4986,7 @@ function Scan-Kimi {
         '(?i)kimi-k2\.5',
         '(?i)kimi-k2',
         '(?i)kimi-k1',
-        '(?i)moonshot-kimi',
-        '(?i)moonshotai'
+        '(?i)moonshot-kimi'
     )
 }
 
@@ -4607,8 +5007,7 @@ function Scan-Ling {
         '(?i)ling-3-flash',
         '(?i)ling-3\.0',
         '(?i)ling3\.0',
-        '(?i)inclusionai-ling',
-        '(?i)inclusionai'
+        '(?i)inclusionai-ling'
     )
 }
 
@@ -5488,7 +5887,19 @@ function Add-ResultToListView {
         $stShow = [string]$r.Activated
         $hideDisable = @("Not Installed", "None Found on Disk", "No AI Features", "Deactivated", "Unknown")
         if ($hideDisable -contains $stShow) {
-            $disableText = ""
+            $showOff = $false
+            if ($r.DisableHint) {
+                foreach ($pat in @("Notepad*","Copilot (Microsoft)","Microsoft 365 Copilot*","Paint*","Recall*","Click to Do*","Windows On-Device AI","Microsoft Edge*")) {
+                    if ($r.Name -like $pat) { $showOff = $true; break }
+                }
+            }
+            if ($showOff -and $stShow -eq "Unknown" -and $r.Name -like "Microsoft Edge*") { $showOff = $false }
+            if ($showOff -and $stShow -eq "Unknown" -and $r.Name -notlike "Microsoft 365 Copilot*" -and $r.Name -notlike "Paint*" -and $r.Name -notlike "Notepad*") { $showOff = $false }
+            if ($showOff) {
+                $disableText = [string]$r.DisableHint
+            } else {
+                $disableText = ""
+            }
         } elseif ($r.DisableHint) {
             $disableText = [string]$r.DisableHint
         } else {
