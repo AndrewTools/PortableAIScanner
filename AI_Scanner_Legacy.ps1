@@ -3,8 +3,8 @@
 # Does not use Appx, WinGet, Copilot, or on-device browser models
 
 $script:AppName = "Portable AI Scanner (Windows 7)"
-$script:AppVersion = "1.7.4"
-$script:AppBuild = "0153"
+$script:AppVersion = "1.7.5"
+$script:AppBuild = "0179"
 
 $script:LogDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $script:LogDir) { $script:LogDir = (Get-Location).Path }
@@ -778,12 +778,13 @@ $btnScan.Add_Click({
         @{ Title = ""; Fn = { Find-Family "Granite 3 / 4 (IBM)" @('(?i)ibm-granite','(?i)granite-?[34]','(?i)granite[34]','(?i)granite-code','(?i)granite-guardian') }},
         @{ Title = ""; Fn = { Find-Family "Hunyuan 3 / 4 (Tencent)" @('(?i)hunyuan','(?i)tencent-hunyuan') }},
         @{ Title = ""; Fn = { Find-Family "Kimi K2 / K3 (Moonshot)" @('(?i)kimi-k','(?i)moonshot-kimi') }},
-        @{ Title = ""; Fn = { Find-Family "Ling 3 (Ant)" @('(?i)ling-3','(?i)ling3\.0','(?i)inclusionai-ling') }},
+        @{ Title = ""; Fn = { Find-Family "Ling 3 / 3.1 (Ant)" @('(?i)ling-3\.1-flash','(?i)ling-3\.1','(?i)ling-3','(?i)ling3\.0','(?i)inclusionai-ling') }},
         @{ Title = ""; Fn = { Find-Family "MiMo V2 (Xiaomi)" @('(?i)mimo-v2','(?i)xiaomi-mimo','(?i)xiaomi/mimo') }},
         @{ Title = ""; Fn = { Find-Family "MiniCPM 4 / 5 (ModelBest)" @('(?i)minicpm') }},
         @{ Title = ""; Fn = { Find-Family "MiniMax M2 / M3 (MiniMax)" @('(?i)minimax') }},
         @{ Title = ""; Fn = { Find-Family "Muse Glimmer (Meta)" @('(?i)muse-glimmer','(?i)muse_glimmer','(?i)museglimmer','(?i)glimmer-30b','(?i)muse-spark','(?i)muse_spark','(?i)musespark') }},
         @{ Title = ""; Fn = { Find-Family "Nemotron 3 (NVIDIA)" @('(?i)nvidia-nemotron','(?i)llama-3\.[13]-nemotron','(?i)nemotron-?[0-9]','(?i)nemotron-(mini|nano|super|ultra|lightning)','(?i)nemotron') }},
+        @{ Title = ""; Fn = { Find-Family "Ornith 1.5 (Ornith)" @('(?i)ornith-1\.5','(?i)ornith-1','(?i)ornith') }},
         @{ Title = ""; Fn = { Scan-LocalSummary }},
         @{ Title = "Browser-based"; Fn = {
             Scan-BrowserExe "Google Chrome + Gemini" @(

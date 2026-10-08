@@ -4,6 +4,49 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
+1.7.5  (2026-10-06)
+==============================================================================
+Build: 0179
+
+Added
+- Agent in Settings. Windows 11 24H2 or later. Policy off is
+  Deactivated. A Copilot+ AI component with no policy off is
+  Activated. No Copilot+ components stays Installed.
+  Home says there is no off switch. Pro says Group Policy >
+  Computer Configuration > Administrative Templates >
+  Windows Components > Windows AI > turn on Disable Settings
+  Agent. Policy off keeps that path and the administrator line.
+- File Explorer + AI. Windows 11 24H2 or later. How to disable
+  is Settings > Apps > Actions, then turn off each action.
+- Ornith 1.5 (Ornith) local model row. Same Installed rules as
+  the other families. A loaded Ornith name stays on that row.
+
+Changed
+- Windows On-Device AI Details keep the component names, such
+  as Image Creation and Phi Silica.
+- A Recall snapshot folder with no Recall app is Not Installed.
+- Microsoft 365 Copilot does not show the Word version when
+  the Copilot app is missing.
+- Click to Do How to disable is Settings > Privacy & security >
+  Click to Do > turn it Off.
+- Browser Details put AI on or AI off first, then the folder,
+  then the path. A version with no AI says AI not in this
+  version. Policy names are not listed. Chrome and Edge do
+  not repeat the status sentence.
+- Microsoft 365 Copilot, Recall, Click to Do, and Agent in
+  Settings put AI on or AI off first, then the app name.
+  Policy off says turned off by policy. File Explorer stays
+  a sentence.
+- scout and maverick count as Llama only when the name also
+  says Llama 4. A name that is only nemotron counts on the
+  Nemotron row.
+- Ling matches Ling 3.1 Flash as well as Ling 3.0. The row name
+  is Ling 3 / 3.1 (Ant).
+- The Settings agent check no longer stops the scan.
+- Copilot policy off says Controlled by your administrator.
+
+
+==============================================================================
 1.7.4  (2026-10-01)
 ==============================================================================
 Build: 0153
@@ -139,6 +182,9 @@ Changed
 Build: 0100
 
 Added
+- Agent in Settings and File Explorer + AI are their own rows.
+  Settings agent off is the administrator policy. File Explorer
+  actions are turned off under Settings > Apps > Actions.
 - MiMo V2 (Xiaomi) local model row. Uses V2.5 / V2.6 style
   filenames, not a bare "mimo" name.
 - Recall (Windows) row. Installed if the Recall app or its
