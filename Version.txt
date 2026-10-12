@@ -4,6 +4,61 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
+1.7.7  (2026-10-10)
+==============================================================================
+Build: 0190
+
+Changed
+- Scan checks now run in the background. The window only
+  adds finished rows. Cancel stops the next check.
+  A folder walk that has already started still finishes.
+- Chrome and Edge settings files are read in the background.
+  The scan uses the cache when it is ready. A direct read is
+  the fallback.
+- Path is now its own column. Browser paths no longer appear
+  in Details. The column sizes to the longest path.
+- Column widths adjust to the longest row after the scan
+  finishes. How to disable stays fixed.
+- Policy-off rows show the Group Policy path on non-Home
+  editions. Home still says controlled by your administrator.
+- Failed checks show a short note on the status bar.
+  The full error stays in Log.txt.
+- Firefox profile settings only follow a path under the
+  Firefox profile tree or the Firefox install folder.
+  An outside path is skipped and noted in Details.
+- File Explorer + AI, Experimental Agentic Features, and
+  Agent in Settings are Not Installed when no Copilot+
+  components are found. They require a Copilot+ PC.
+- Click to Do and Windows On-Device AI say components,
+  not app. They are Windows features, not apps.
+- The log shows Windows 11 when the build is 22000 or
+  higher. The registry name can still say Windows 10.
+
+
+==============================================================================
+1.7.6  (2026-10-10)
+==============================================================================
+Build: 0180
+
+Added
+- New Microsoft Windows section for system features. Sorted
+  A-Z: Agent in Settings, Click to Do, Experimental Agentic
+  Features, File Explorer + AI, Recall, Semantic Search,
+  Windows On-Device AI, Windows Studio Effects.
+  Microsoft Apps keeps the apps.
+- Experimental Agentic Features. Off by default. On when the
+  agent workspace is enabled. How to disable is Settings >
+  System > AI components > Experimental agentic features.
+- Semantic Search. Present when Semantic Analysis or Image
+  Search is available. Natural language search on Copilot+
+  PCs. Full off is limited.
+- Windows Studio Effects. Supported when present. Enablement
+  is per-camera. How to disable is Settings > Bluetooth &
+  devices > Cameras or Quick Settings.
+- Windows On-Device AI notes removable models. Image Creation
+  can be removed in Settings > System > AI components.
+
+==============================================================================
 1.7.5  (2026-10-06)
 ==============================================================================
 Build: 0179

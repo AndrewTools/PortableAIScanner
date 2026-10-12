@@ -7,8 +7,8 @@
 # That is not a missing function closer. Count braces outside strings.
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.7.5"
-$script:AppBuild = "0179"
+$script:AppVersion = "1.7.7"
+$script:AppBuild = "0190"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -51,7 +51,11 @@ function Ensure-LogFile {
     try {
         $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
         $arch = if ([Environment]::Is64BitOperatingSystem) { "64-bit" } else { "32-bit" }
-        $win = "$($os.Caption) (Version $($os.Version), Build $($os.BuildNumber), $arch)"
+        $bn = 0
+        try { $bn = [int]$os.BuildNumber } catch { $bn = 0 }
+        $cap = [string]$os.Caption
+        if ($bn -ge 22000) { $cap = $cap -replace 'Windows 10', 'Windows 11' }
+        $win = "$cap (Version $($os.Version), Build $bn, $arch)"
     } catch {}
     $header = @"
 Portable AI Scanner Log
@@ -1037,6 +1041,7 @@ function New-Result {
         Version = $Version
         Running = $Running
         DisableHint = $DisableHint
+        Path = ""
     }
 }
 
@@ -1064,11 +1069,14 @@ function Get-HowToDisable {
         "Jan*" { return "Open Jan > Hub / Models > delete models. Or $apps > Jan > Uninstall." }
         "GPT4All*" { return "Open GPT4All > Downloads / Models > remove models. Or $apps > GPT4All > Uninstall." }
         "Cursor*" { return "$apps > Cursor > Uninstall." }
-        "Recall (Windows)*" { return "Windows Settings > Privacy & security > Recall & snapshots > turn off Save snapshots. To remove the feature: search Turn Windows features on or off > uncheck Recall > OK > restart." }
-        "Click to Do (Windows)*" { return "Windows Settings > Privacy & security > Click to Do > turn it Off." }
-        "Agent in Settings (Windows)*" { return (Get-SettingsAgentDisableText) }
+        "Recall*" { return "Windows Settings > Privacy & security > Recall & snapshots > turn off Save snapshots. To remove the feature: search Turn Windows features on or off > uncheck Recall > OK > restart." }
+        "Click to Do*" { return "Windows Settings > Privacy & security > Click to Do > turn it Off." }
+        "Agent in Settings*" { return (Get-SettingsAgentDisableText) }
         "File Explorer + AI*" { return "Settings > Apps > Actions, then turn off each action. Restart if the menu is still there. Do not edit the registry." }
         "Windows On-Device*" { return "Windows Settings > Privacy & security > Text and image generation > turn the feature off. Settings > System > AI components. Only Image Creation can be removed there if it is listed." }
+        "Experimental Agentic*" { return "Windows Settings > System > AI components > Experimental agentic features > turn it Off." }
+        "Semantic Search*" { return "Exclude folders from indexing in Windows Settings > Privacy & security > Searching Windows. Full off is limited on Copilot+ PCs." }
+        "Windows Studio Effects*" { return "Windows Settings > Bluetooth & devices > Cameras > select your camera > turn off Studio Effects. Or use Quick Settings (Win+A) > Studio Effects." }
         "GitHub Copilot*" { return "Open VS Code > Extensions > GitHub Copilot > Disable or Uninstall." }
         "ComfyUI*" { return "$apps > ComfyUI if listed > Uninstall. If it is only a folder app, open Start > right-click the app shortcut > Uninstall." }
         "Opera*" { return "Open Opera > Settings > Sidebar > turn off Aria / Opera AI." }
@@ -1477,8 +1485,8 @@ function Test-ProductProcessOpen {
         "Claude Code*" { $patterns = @("claude") }
         "Claude*" { $patterns = @("Claude") }
         "Gemini (Google)*" { $patterns = @() }
-        "Recall (Windows)*" { $patterns = @("Recall") }
-        "Click to Do (Windows)*" { $patterns = @("ClickToDo", "ClickToDoExperience") }
+        "Recall*" { $patterns = @("Recall") }
+        "Click to Do*" { $patterns = @("ClickToDo", "ClickToDoExperience") }
         "Copilot (Microsoft)" { $patterns = @("Copilot") }
         "Microsoft 365 Copilot*" { $patterns = @("Microsoft365Copilot") }
         "Grok*" { $patterns = @("Grok") }
@@ -1880,7 +1888,7 @@ function Scan-Copilot {
         }
         if ($turnedOff) {
             Set-ScanStatus $r "Deactivated"
-            $r.DisableHint = "Controlled by your administrator."
+            $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows Copilot > turn on Turn off Windows Copilot."
             $r.Details = "AI off | turned off by policy | App: $($pkg.Name)"
         } else {
             Set-ScanStatus $r "Activated"
@@ -2164,6 +2172,75 @@ function Get-PrefFileText {
 }
 
 
+function Start-PrefCacheWorker {
+    # Pre-read Chrome and Edge prefs on a background runspace so the
+    # window thread does not block on file I/O. Results land in
+    # $script:PrefCache. Scan functions fall back to direct reads if
+    # the cache is not ready. Restarted on each scan so Rescan
+    # sees current settings.
+    if ($script:PrefCacheWorker) {
+        try { $script:PrefCacheWorker.Stop() } catch {}
+        try { $script:PrefCacheWorker.Dispose() } catch {}
+        $script:PrefCacheWorker = $null
+    }
+    $script:PrefCache = [hashtable]::Synchronized(@{})
+    $ps = [powershell]::Create()
+    [void]$ps.AddScript({
+        param($Cache)
+        $roots = @(
+            "$env:LOCALAPPDATA\Google\Chrome\User Data",
+            "$env:LOCALAPPDATA\Google\Chrome Beta\User Data",
+            "$env:LOCALAPPDATA\Google\Chrome Dev\User Data",
+            "$env:LOCALAPPDATA\Google\Chrome SxS\User Data",
+            "$env:LOCALAPPDATA\Microsoft\Edge\User Data",
+            "$env:LOCALAPPDATA\Microsoft\Edge Beta\User Data",
+            "$env:LOCALAPPDATA\Microsoft\Edge Dev\User Data",
+            "$env:LOCALAPPDATA\Microsoft\Edge SxS\User Data"
+        )
+        foreach ($root in $roots) {
+            if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
+            $files = @()
+            $ls = Join-Path $root "Local State"
+            if (Test-Path -LiteralPath $ls) { $files += $ls }
+            $def = Join-Path $root "Default\Preferences"
+            if (Test-Path -LiteralPath $def) { $files += $def }
+            try {
+                foreach ($d in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | Select-Object -First 12)) {
+                    if ($d.Name -notlike "Profile*") { continue }
+                    $pref = Join-Path $d.FullName "Preferences"
+                    if (Test-Path -LiteralPath $pref) { $files += $pref }
+                }
+            } catch {}
+            foreach ($f in $files) {
+                try {
+                    $text = $null
+                    $fs = $null
+                    try {
+                        $fs = [System.IO.File]::Open($f, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                        $take = [int][Math]::Min($fs.Length, 12582912)
+                        if ($take -gt 0) {
+                            $buf = New-Object byte[] $take
+                            $n = $fs.Read($buf, 0, $take)
+                            if ($n -gt 0) { $text = [System.Text.Encoding]::UTF8.GetString($buf, 0, $n) }
+                        }
+                    } finally { if ($fs) { $fs.Dispose() } }
+                    if ($null -ne $text) { $Cache[$f] = $text }
+                } catch {}
+            }
+        }
+    }).AddArgument($script:PrefCache)
+    $script:PrefCacheWorker = $ps
+    $script:PrefCacheHandle = $ps.BeginInvoke()
+}
+
+function Get-CachedPrefText {
+    param([string]$Path)
+    if ($script:PrefCache -and $script:PrefCache.ContainsKey($Path)) {
+        return [string]$script:PrefCache[$Path]
+    }
+    return $null
+}
+
 function Get-ChromiumPrefFiles {
     param([string[]]$UserDataRoots, [int]$MaxFiles = 12)
     $files = New-Object System.Collections.Generic.List[string]
@@ -2419,16 +2496,23 @@ function Move-BrowserPathLast {
     if (-not $Result) { return }
     $d = [string]$Result.Details
     if (-not $d) { return }
-    $d = $d.Replace("AI not in this version", "AI not in this version")
     $parts = @($d -split '\s*\|\s*' | Where-Object { $_ })
     $browser = @($parts | Where-Object { $_ -like 'Browser:*' })
     $rest = @($parts | Where-Object { $_ -notlike 'Browser:*' })
+    if ($browser) {
+        $bp = [string]$browser[0]
+        if ($bp -like 'Browser:*') { $Result.Path = $bp.Substring(8).Trim() }
+    }
     $st = [string]$Result.Activated
-    $hasOn = @($rest | Where-Object { $_ -like 'AI on*' }).Count -gt 0
-    $hasOff = @($rest | Where-Object { $_ -like 'AI off*' }).Count -gt 0
-    if ($st -eq 'Activated' -and -not $hasOn) { $rest = @('AI on') + @($rest) }
-    elseif ($st -eq 'Deactivated' -and -not $hasOff) { $rest = @('AI off') + @($rest) }
-    $Result.Details = (@($rest + $browser) | Where-Object { $_ }) -join ' | '
+    $lead = @()
+    $other = @()
+    foreach ($p in $rest) {
+        if ($p -like 'AI on*' -or $p -like 'AI off*') { $lead += $p }
+        else { $other += $p }
+    }
+    if ($st -eq 'Activated' -and -not ($lead | Where-Object { $_ -like 'AI on*' })) { $lead = @('AI on') + @($lead) }
+    elseif ($st -eq 'Deactivated' -and -not ($lead | Where-Object { $_ -like 'AI off*' })) { $lead = @('AI off') + @($lead) }
+    $Result.Details = (@($lead + $other) | Where-Object { $_ }) -join ' | '
 }
 
 function Scan-GeminiChrome {
@@ -2522,7 +2606,8 @@ function Scan-GeminiChrome {
 
     foreach ($prefFile in @(Get-ChromiumPrefFiles $chromeDataRoots)) {
         try {
-            $content = Get-PrefFileText $prefFile
+            $content = Get-CachedPrefText $prefFile
+            if ($null -eq $content) { $content = Get-PrefFileText $prefFile }
             if ($null -eq $content) { continue }
             if ($script:LastPrefTruncated) { $prefTruncated = $true }
             $prefName = [IO.Path]::GetFileName([string]$prefFile)
@@ -3142,7 +3227,8 @@ function Scan-EdgeCopilot {
     )
     foreach ($prefFile in @(Get-ChromiumPrefFiles $edgeDataRoots)) {
         try {
-            $pr = Get-PrefFileText $prefFile
+            $pr = Get-CachedPrefText $prefFile
+            if ($null -eq $pr) { $pr = Get-PrefFileText $prefFile }
             if ($null -eq $pr) { continue }
             if ($script:LastPrefTruncated) { $prefTruncated = $true }
             $prefsRead = $true
@@ -3192,7 +3278,7 @@ function Scan-EdgeCopilot {
 
     if ($policyOff) {
         Set-ScanStatus $r "Deactivated"
-        $r.DisableHint = "Controlled by your administrator."
+        $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Microsoft Edge > set GenAILocalFoundationalModelSettings to 1 (do not download)."
         $r.Details += " | AI off | turned off by policy$mid | $modelDetail"
     } elseif ($settingsOn) {
         Set-ScanStatus $r "Activated"
@@ -3431,7 +3517,7 @@ function Scan-WindowsAIComponents {
         $script:AllAppx = @(Get-AppxPackage -ErrorAction SilentlyContinue)
     }
     # Known Windows AI packages only. A data folder is not the app.
-    $aiNameRe = "Windows\.AI|Microsoft\.Windows\.AI|PhiSilica|AionInstruct|WindowsAI|AI\.Model|ImageCreation|ImageGeneration|ImageTransform|ContentExtraction|SemanticAnalysis"
+    $aiNameRe = "Windows\.AI|Microsoft\.Windows\.AI|PhiSilica|AionInstruct"
     $aiPkgs = @($script:AllAppx | Where-Object { $_.Name -match $aiNameRe })
     $parts = @()
 
@@ -3457,6 +3543,13 @@ function Scan-WindowsAIComponents {
         }
         if ($found.Count -gt 0) {
             $parts += "AI components: " + ($found -join ", ")
+            if ($found -contains "Image Creation") {
+                $parts += "Image Creation is removable in Settings > System > AI components"
+            }
+            if ($found -contains "Phi Silica") {
+                $parts += "Phi Silica present (NPU or GPU model)"
+            }
+            $parts += "Manage in Settings > System > AI components"
         } else {
             $parts += "On-device AI packages present"
         }
@@ -3478,13 +3571,13 @@ function Scan-WindowsAIComponents {
     if (-not $knownPackage) {
         $r.Installed = $false
         Set-ScanStatus $r "Not Installed"
-        if (-not ($parts | Where-Object { $_ -like "Data folder*" })) { $parts = @("No Windows On-Device AI app found") }
-        else { $parts = @("Leftover folder; no app") + @($parts | Where-Object { $_ -like "Data folder*" }) }
+        if (-not ($parts | Where-Object { $_ -like "Data folder*" })) { $parts = @("No Windows AI components found. Requires a Copilot+ PC.") }
+        else { $parts = @("Leftover folder; no components") + @($parts | Where-Object { $_ -like "Data folder*" }) }
     } elseif (-not $r.Activated -or $r.Activated -eq "Not Installed") {
         Set-ScanStatus $r "Installed"
     }
     $consent = Get-SystemAiConsent
-    $privacyHow = "Windows Settings > Privacy & security > Text and image generation > turn off Windows AI if listed."
+    $privacyHow = "Windows Settings > Privacy & security > Text and image generation > turn off Windows AI if listed. Removable models: Settings > System > AI components."
     if ($knownPackage -and $consent.Denied) {
         $parts += "Text and image generation off"
         Set-ScanStatus $r "Deactivated"
@@ -3523,8 +3616,112 @@ function Get-WindowsAiPolicyDword {
     return $null
 }
 
+function Scan-ExperimentalAgenticFeatures {
+    $r = New-Result "Experimental Agentic Features"
+    $parts = @()
+    $regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\IsoEnvBroker"
+    $enabled = $null
+    try { $enabled = Get-RegValueSafe -Path $regPath -Name "Enabled" } catch { $enabled = $null }
+
+    if ($null -ne $enabled) {
+        $r.Installed = $true
+        $isOn = $false
+        try { if ([int]$enabled -eq 1) { $isOn = $true } } catch { $isOn = $false }
+        if ($isOn) {
+            Set-ScanStatus $r "Activated"
+            $parts += "Agent workspace enabled"
+            $r.DisableHint = "Windows Settings > System > AI components > Experimental agentic features > turn it Off."
+        } else {
+            Set-ScanStatus $r "Deactivated"
+            $parts += "AI off"
+            $r.DisableHint = "Windows Settings > System > AI components > Experimental agentic features."
+        }
+    } else {
+        # Feature available on recent Windows 11 but off by default when key is absent
+        if (Test-WindowsBuildAtLeast 26100) {
+            Set-ScanStatus $r "Not Installed"
+            $parts += "Requires a Copilot+ PC. Experimental agentic features may not be available on this PC."
+        } else {
+            Set-ScanStatus $r "Not Installed"
+            $parts += "Not supported in this Windows version. Experimental agentic features are Windows 11 24H2 or later."
+        }
+    }
+    $r.Details = ($parts | Where-Object { $_ }) -join " | "
+    return $r
+}
+
+function Scan-SemanticSearch {
+    $r = New-Result "Semantic Search"
+    $parts = @()
+    $semantic = $false
+    $imageSearch = $false
+
+    if ($null -eq $script:AllAppx) {
+        $script:AllAppx = @(Get-AppxPackage -ErrorAction SilentlyContinue)
+    }
+    # Tight match: only Semantic Analysis and Image Search (same patterns as WindowsAIComponents)
+    $aiPkgs = @($script:AllAppx | Where-Object { $_.Name -match "SemanticAnalysis|ImageSearch" })
+    foreach ($p in $aiPkgs) {
+        if ($p.Name -match "SemanticAnalysis") { $semantic = $true }
+        if ($p.Name -match "ImageSearch") { $imageSearch = $true }
+    }
+
+    if ($semantic -or $imageSearch) {
+        $r.Installed = $true
+        Set-ScanStatus $r "Installed"
+        if ($semantic) { $parts += "Semantic Analysis present" }
+        if ($imageSearch) { $parts += "Image Search present" }
+        $parts += "Natural language local search available on Copilot+ PCs"
+        $r.DisableHint = "Exclude folders from indexing in Windows Settings > Privacy & security > Searching Windows. Full off is limited."
+    } else {
+        Set-ScanStatus $r "Not Installed"
+        $parts += "Semantic Search components not found"
+    }
+    $r.Details = ($parts | Where-Object { $_ }) -join " | "
+    return $r
+}
+
+function Scan-StudioEffects {
+    $r = New-Result "Windows Studio Effects"
+    $parts = @()
+    $regPath = "HKLM:\SOFTWARE\Microsoft\StudioEffects"
+    $hasKey = $false
+    try { $hasKey = Test-Path -LiteralPath $regPath } catch { $hasKey = $false }
+
+    if ($null -eq $script:AllAppx) {
+        $script:AllAppx = @(Get-AppxPackage -ErrorAction SilentlyContinue)
+    }
+    # Tight match: avoid broad AICamera false positives
+    $studioPkg = @($script:AllAppx | Where-Object { $_.Name -match "StudioEffects|WindowsStudioEffects" })
+
+    if ($hasKey -or $studioPkg) {
+        $r.Installed = $true
+        Set-ScanStatus $r "Installed"
+        $parts += "Studio Effects supported"
+        $parts += "Enablement is per-camera in Quick Settings or Camera settings"
+        $enabled = $null
+        try { $enabled = Get-RegValueSafe -Path $regPath -Name "Enabled" } catch { $enabled = $null }
+        if ($null -ne $enabled) {
+            $isOn = $false
+            try { if ([int]$enabled -eq 1) { $isOn = $true } } catch { $isOn = $false }
+            if ($isOn) {
+                Set-ScanStatus $r "Activated"
+                $parts += "Global Enabled flag set"
+            } else {
+                $parts += "Global Enabled flag off"
+            }
+        }
+        $r.DisableHint = "Windows Settings > Bluetooth & devices > Cameras > select your camera > turn off Studio Effects. Or Quick Settings (Win+A)."
+    } else {
+        Set-ScanStatus $r "Not Installed"
+        $parts += "No Studio Effects capability detected"
+    }
+    $r.Details = ($parts | Where-Object { $_ }) -join " | "
+    return $r
+}
+
 function Scan-Recall {
-    $r = New-Result "Recall (Windows)"
+    $r = New-Result "Recall"
     $parts = @()
     $rawPkgs = @()
     foreach ($pat in @("*Windows*Recall*", "Microsoft.*Recall*")) {
@@ -3572,7 +3769,7 @@ function Scan-Recall {
     if ($policyBlocks) {
         Set-ScanStatus $r "Deactivated"
         $parts = @("AI off", "turned off by policy") + @($parts | Where-Object { $_ -like "App:*" -or $_ -like "Snapshot*" })
-        $r.DisableHint = "Controlled by your administrator."
+        $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows AI > set Allow Recall enablement to Disabled."
     } elseif ($userOff) {
         Set-ScanStatus $r "Deactivated"
         $parts = @("AI off") + @($parts | Where-Object { $_ -like "App:*" -or $_ -like "Snapshot*" })
@@ -3602,13 +3799,11 @@ function Scan-FileExplorerAI {
     $how = "Settings > Apps > Actions, then turn off each action. Restart if the menu is still there."
     if (-not $pkgs) {
         if (Test-WindowsBuildAtLeast 26100) {
-            Set-ScanStatus $r "Installed"
-            $r.Installed = $true
-            $r.Details = "Windows 11 24H2 or later. No AI actions package found. The menu may still be there."
-            $r.DisableHint = $how
+            Set-ScanStatus $r "Not Installed"
+            $r.Details = "No AI actions package found. Requires a Copilot+ PC."
         } else {
             Set-ScanStatus $r "Not Installed"
-            $r.Details = "No File Explorer + AI found"
+            $r.Details = "Not supported in this Windows version. File Explorer + AI is Windows 11 24H2 or later."
         }
         return $r
     }
@@ -3622,7 +3817,7 @@ function Scan-FileExplorerAI {
 }
 
 function Scan-ClickToDo {
-    $r = New-Result "Click to Do (Windows)"
+    $r = New-Result "Click to Do"
     $parts = @()
     $pkgs = Get-AppxByName "*ClickToDo*"
     if (-not $pkgs) { $pkgs = Get-AppxByName "*ClickToDoExperience*" }
@@ -3639,7 +3834,7 @@ function Scan-ClickToDo {
 
     if (-not $r.Installed) {
         Set-ScanStatus $r "Not Installed"
-        $r.Details = "No Click to Do app found"
+        $r.Details = "No Click to Do components found. Requires a Copilot+ PC."
         return $r
     }
 
@@ -3647,7 +3842,7 @@ function Scan-ClickToDo {
     if ($null -ne $disable -and [int]$disable -eq 1) {
         Set-ScanStatus $r "Deactivated"
         $parts = @("AI off", "turned off by policy") + @($parts | Where-Object { $_ -like "App:*" })
-        $r.DisableHint = "Controlled by your administrator."
+        $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows AI > turn on Disable Click to Do."
     } else {
         Set-ScanStatus $r "Installed"
         $parts = @("AI on/off not read") + @($parts | Where-Object { $_ -like "App:*" })
@@ -3676,27 +3871,39 @@ function Get-SettingsAgentDisableText {
     } catch {}
     $isHome = ($edition -match '^(Core|CoreSingleLanguage|CoreCountrySpecific)$') -or ($name -match 'Home')
     if ($isHome) { return "Home: there is no off switch in Settings." }
-    return "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows AI > turn on Disable Settings Agent."
+    return "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows AI > Disable Settings Agent (if present). The policy may require the Windows AI administrative templates."
+}
+
+function Get-AdminPolicyHint {
+    param([string]$GpeditPath)
+    $edition = ""
+    $name = ""
+    try {
+        $cv = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion" -ErrorAction Stop
+        $edition = [string]$cv.EditionID
+        $name = [string]$cv.ProductName
+    } catch {}
+    $isHome = ($edition -match '^(Core|CoreSingleLanguage|CoreCountrySpecific)$') -or ($name -match 'Home')
+    if ($isHome -or -not $GpeditPath) { return "Controlled by your administrator." }
+    return "Controlled by your administrator. " + $GpeditPath
 }
 
 function Scan-SettingsAgent {
-    $r = New-Result "Agent in Settings (Windows)"
+    $r = New-Result "Agent in Settings"
     $how = Get-SettingsAgentDisableText
     if (-not (Test-WindowsBuildAtLeast 26100)) {
         Set-ScanStatus $r "Not Installed"
-        $r.Details = "Not on this Windows. Settings agent is Windows 11 24H2 or later."
+        $r.Details = "Not supported in this Windows version. Settings agent is Windows 11 24H2 or later."
         return $r
     }
     if ($null -eq $script:AllAppx) {
         $script:AllAppx = @(Get-AppxPackage -ErrorAction SilentlyContinue)
     }
-    $aiNameRe = "Windows\.AI|Microsoft\.Windows\.AI|PhiSilica|AionInstruct|WindowsAI|AI\.Model|ImageCreation|ImageGeneration|ImageTransform|ContentExtraction|SemanticAnalysis"
+    $aiNameRe = "Windows\.AI|Microsoft\.Windows\.AI|PhiSilica|AionInstruct"
     $aiPkgs = @($script:AllAppx | Where-Object { $_.Name -match $aiNameRe })
     if (-not $aiPkgs) {
-        Set-ScanStatus $r "Installed"
-        $r.Installed = $true
-        $r.Details = "Windows 11 24H2 or later. No Copilot+ AI components found. Settings agent may not be on this PC."
-        $r.DisableHint = $how
+        Set-ScanStatus $r "Not Installed"
+        $r.Details = "Requires a Copilot+ PC. No Copilot+ AI components found. Settings agent is not available on this PC."
         return $r
     }
     $off = Get-WindowsAiPolicyDword "DisableSettingsAgent"
@@ -3704,11 +3911,11 @@ function Scan-SettingsAgent {
     $parts = @("Windows 11 24H2 or later", "Copilot+ AI components present")
     if ($null -ne $off -and [int]$off -eq 1) {
         Set-ScanStatus $r "Deactivated"
-        $parts = @("AI off", "turned off by policy", "App: Windows AI components")
+        $parts = @("AI off", "turned off by policy", "Components: Windows AI")
         $r.DisableHint = "Controlled by your administrator. " + $how
     } else {
         Set-ScanStatus $r "Activated"
-        $parts = @("AI on", "App: Windows AI components")
+        $parts = @("AI on", "Components: Windows AI")
         $r.DisableHint = $how
     }
     $r.Details = ($parts | Where-Object { $_ }) -join " | "
@@ -4249,6 +4456,18 @@ function Scan-Firefox {
                     if (-not $sec.Path) { continue }
                     $p = $sec.Path
                     if ($sec.Rel) { $p = Join-Path $ffRoot $p }
+                    $ok = $false
+                    try {
+                        $full = [System.IO.Path]::GetFullPath($p)
+                        $ffFull = [System.IO.Path]::GetFullPath($ffRoot)
+                        $pfFull = [System.IO.Path]::GetFullPath($env:ProgramFiles)
+                        if ($full.StartsWith($ffFull, [StringComparison]::OrdinalIgnoreCase)) { $ok = $true }
+                        elseif ($full.StartsWith($pfFull, [StringComparison]::OrdinalIgnoreCase)) { $ok = $true }
+                    } catch { $ok = $false }
+                    if (-not $ok) {
+                        $r.Details += " | Path outside Firefox profile tree: skipped"
+                        continue
+                    }
                     $profileDirs += $p
                 }
             }
@@ -5769,23 +5988,57 @@ function Resize-NameAndDisableColumns {
     param($ListView)
     if (-not $ListView) { return }
     if ($ListView.Columns.Count -lt 7) { return }
-    $min0 = 72
-    $min6 = 96
+    $maxName = 72
+    $maxStatus = 72
+    $maxVer = 60
+    $maxDisable = 96
+    $maxPath = 72
     try {
         $g = $ListView.CreateGraphics()
         try {
-            $min0 = [Math]::Max($min0, [int]$g.MeasureString($ListView.Columns[0].Text, $ListView.Font).Width + 24)
-            $min6 = [Math]::Max($min6, [int]$g.MeasureString($ListView.Columns[6].Text, $ListView.Font).Width + 24)
+            $font = $ListView.Font
+            $maxName = [Math]::Max($maxName, [int]$g.MeasureString($ListView.Columns[0].Text, $font).Width + 16)
+            $maxDisable = [Math]::Max($maxDisable, [int]$g.MeasureString($ListView.Columns[6].Text, $font).Width + 16)
+            if ($ListView.Columns.Count -gt 3) { $maxStatus = [Math]::Max($maxStatus, [int]$g.MeasureString($ListView.Columns[3].Text, $font).Width + 16) }
+            if ($ListView.Columns.Count -gt 4) { $maxVer = [Math]::Max($maxVer, [int]$g.MeasureString($ListView.Columns[4].Text, $font).Width + 16) }
+            if ($ListView.Columns.Count -gt 7) { $maxPath = [Math]::Max($maxPath, [int]$g.MeasureString($ListView.Columns[7].Text, $font).Width + 16) }
+            foreach ($it in $ListView.Items) {
+                if ($it.Tag -eq "section") { continue }
+                if ($it.Text) {
+                    $w = [int]$g.MeasureString([string]$it.Text, $font).Width + 16
+                    if ($w -gt $maxName) { $maxName = $w }
+                }
+                if ($it.SubItems.Count -gt 3) {
+                    $w = [int]$g.MeasureString([string]$it.SubItems[3].Text, $font).Width + 16
+                    if ($w -gt $maxStatus) { $maxStatus = $w }
+                }
+                if ($it.SubItems.Count -gt 4) {
+                    $w = [int]$g.MeasureString([string]$it.SubItems[4].Text, $font).Width + 16
+                    if ($w -gt $maxVer) { $maxVer = $w }
+                }
+                if ($it.SubItems.Count -gt 6) {
+                    $w = [int]$g.MeasureString([string]$it.SubItems[6].Text, $font).Width + 16
+                    if ($w -gt $maxDisable) { $maxDisable = $w }
+                }
+                if ($it.SubItems.Count -gt 7) {
+                    $w = [int]$g.MeasureString([string]$it.SubItems[7].Text, $font).Width + 16
+                    if ($w -gt $maxPath) { $maxPath = $w }
+                }
+            }
         } finally { $g.Dispose() }
     } catch {}
-    $w0 = [int]$script:ColWidth0
-    $w6 = [int]$script:ColWidth6
-    if ($w0 -lt $min0) { $w0 = $min0 }
-    if ($w6 -lt $min6) { $w6 = $min6 }
-    $ListView.Columns[0].Width = $w0
-    $ListView.Columns[6].Width = $w6
-    $script:ColWidth0 = $w0
-    $script:ColWidth6 = $w6
+    if ($maxName -gt 280) { $maxName = 280 }
+    if ($maxStatus -gt 180) { $maxStatus = 180 }
+    if ($maxVer -gt 140) { $maxVer = 140 }
+    if ($maxDisable -gt 400) { $maxDisable = 400 }
+    if ($maxPath -gt 400) { $maxPath = 400 }
+    $ListView.Columns[0].Width = $maxName
+    $ListView.Columns[6].Width = $maxDisable
+    if ($ListView.Columns.Count -gt 3) { $ListView.Columns[3].Width = $maxStatus }
+    if ($ListView.Columns.Count -gt 4) { $ListView.Columns[4].Width = $maxVer }
+    if ($ListView.Columns.Count -gt 7) { $ListView.Columns[7].Width = $maxPath }
+    $script:ColWidth0 = $maxName
+    $script:ColWidth6 = $maxDisable
 }
 
 function Update-TrackedNameDisableWidth {
@@ -5915,6 +6168,79 @@ function Start-PasBackground {
             return $false
         }
     }
+    if ($Kind -eq "scanfn") {
+        $fnName = $script:PasScanFnName
+        if (-not $fnName) { return $false }
+        try {
+            $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+            $need = @(
+                $fnName,
+                "New-Result","Set-ScanStatus","Get-AppxByName","Test-PathAny","Get-NewestExistingExe",
+                "Get-FileVersionSafe","Get-RegValueSafe","Get-UninstallApps","Get-HowToDisable",
+                "Get-CachedPrefText","Get-PrefFileText","Get-ChromiumPrefFiles","Get-FirstWeightsBin",
+                "Get-OptGuideFolderDetail","Test-ChromeProcessLive","Get-ChromeRowStatus",
+                "Get-LoadedModelsMatching","Get-KnownFamilyPatterns","Get-UnclaimedLoadedModels",
+                "Get-OllamaLoadedModels","Get-LmStudioLoadedModels","Get-LlamaCppLoadedModels",
+                "Get-LocalAiLoadedModels","Get-KoboldCppLoadedModels","Get-OpenAiCompatLoadedModels",
+                "Test-LocalPortOpen","Test-LocalAiPortAllowed","Test-PortOwnerMatchesProduct",
+                "Test-LoopbackListenOwnerName","Get-LoopbackListenOwnerMap","Get-KnownCommandSource",
+                "Get-CachedProcesses","Test-CachedProcessName","Test-ProductProcessOpen",
+                "Test-ProcessPathMatchesProduct","Get-ProcessImageHint","Test-BrowserProcessOpen",
+                "Get-NotepadPackageSetting","Get-NotepadPackageSwitch","Get-NotepadRewriteSetting",
+                "Read-NotepadSettingsDatFile","Get-SystemAiConsent","Get-FoundryUninstallInfo",
+                "New-UninstallAppsCache","Get-CommunityNameLabels","Find-ModelFamilyOnDisk",
+                "Test-IsRunning","Set-RunningAndStatus","Test-IsHostOptionalAiRow","Test-IsBrowserAiRow",
+                "Write-Log","Write-ErrorLog","Ensure-LogFile","Initialize-Log","Test-ScanCanceled",
+                "Test-WindowsBuildAtLeast","Get-WindowsVersionInfo","Get-SettingsAgentDisableText",
+                "Get-AdminPolicyHint","Get-WindowsAiPolicyDword","Get-SystemAiConsent",
+                "Move-BrowserPathLast"
+            )
+            foreach ($name in $need) {
+                $cmd = Get-Command -Name $name -CommandType Function -ErrorAction SilentlyContinue
+                if (-not $cmd) { continue }
+                try {
+                    [void]$iss.Commands.Add((New-Object System.Management.Automation.Runspaces.SessionStateFunctionEntry($cmd.Name, $cmd.Definition)))
+                } catch {}
+            }
+            $rs = [runspacefactory]::CreateRunspace($iss)
+            $rs.ApartmentState = "MTA"
+            $rs.ThreadOptions = "ReuseThread"
+            $rs.Open()
+            $ps = [powershell]::Create()
+            $ps.Runspace = $rs
+            $shared = [hashtable]::Synchronized(@{
+                AllAppx = @($script:AllAppx)
+                ListenOwnerMap = $script:ListenOwnerMap
+                UninstallAppsCache = @($script:UninstallAppsCache)
+                ModelNameIndex = @($script:ModelNameIndex)
+                ClaimedModelNames = $script:ClaimedModelNames
+                PrefCache = $script:PrefCache
+                ScanSync = $script:ScanSync
+            })
+            [void]$ps.AddScript({
+                param($FnName, $Shared)
+                $script:AllAppx = @($Shared.AllAppx)
+                $script:ListenOwnerMap = $Shared.ListenOwnerMap
+                $script:UninstallAppsCache = @($Shared.UninstallAppsCache)
+                $script:ModelNameIndex = @($Shared.ModelNameIndex)
+                $script:ClaimedModelNames = $Shared.ClaimedModelNames
+                $script:PrefCache = $Shared.PrefCache
+                $script:ScanSync = $Shared.ScanSync
+                $script:CancelScan = [bool]$Shared.ScanSync.Cancel
+                $fn = Get-Command -Name $FnName -CommandType Function -ErrorAction SilentlyContinue
+                if (-not $fn) { return $null }
+                return & $fn
+            }).AddArgument($fnName).AddArgument($shared)
+            $script:PasBgPS = $ps
+            $script:PasBgRunspace = $rs
+            $script:PasBgHandle = $ps.BeginInvoke()
+            return $true
+        } catch {
+            Write-ErrorLog "Background scanfn failed to start" -ErrorRecord $_
+            Stop-PasBackground
+            return $false
+        }
+    }
     if ($Kind -ne "index") { return $false }
     try {
         $iss = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
@@ -6021,6 +6347,7 @@ function Add-SectionHeaderToListView {
     $item.SubItems.Add("") | Out-Null
     $item.SubItems.Add("") | Out-Null
     $item.SubItems.Add("") | Out-Null
+    $item.SubItems.Add("") | Out-Null
     $item.ForeColor = [System.Drawing.Color]::DimGray
     $item.BackColor = [System.Drawing.Color]::FromArgb(240, 240, 240)
     $item.Font = New-Object System.Drawing.Font($ListView.Font, [System.Drawing.FontStyle]::Bold)
@@ -6067,6 +6394,10 @@ function Add-ResultToListView {
         }
     }
     $item.SubItems.Add( $disableText ) | Out-Null
+    $pathText = ""
+    if ($r.Path) { $pathText = [string]$r.Path }
+    elseif ($r.Details -match 'Browser:\s*(.+?)(?:\s*\|\s*|$)') { $pathText = $Matches[1] }
+    $item.SubItems.Add( $pathText ) | Out-Null
     $tip = @()
     if ($r.Details) { $tip += [string]$r.Details }
     if ($disableText) { $tip += [string]$disableText }
@@ -6784,10 +7115,10 @@ function Get-ScanStepLabel {
         "TextGenWebUI" = "text-generation-webui"
         "Vllm" = "vLLM"
         "Windsurf" = "Windsurf"
-        "Recall" = "Recall (Windows)"
-        "SettingsAgent" = "Agent in Settings (Windows)"
+        "Recall" = "Recall"
+        "SettingsAgent" = "Agent in Settings"
         "FileExplorerAI" = "File Explorer + AI"
-        "ClickToDo" = "Click to Do (Windows)"
+        "ClickToDo" = "Click to Do"
         "MiMo" = "MiMo V2 (Xiaomi)"
     }
     if ($map.ContainsKey($key)) { return [string]$map[$key] }
@@ -6899,6 +7230,7 @@ $script:FilterBusy = $false
 $script:SkipListLayout = $false
 $script:LvCache = $null
 $script:ScanRows = @()
+$script:ScanFailCount = 0
 $script:HasScanResults = $false
 $script:ScanBusy = $false
 $script:ScanPass = 0
@@ -7012,8 +7344,9 @@ $lv.Columns.Add("Installed", 58) | Out-Null
 $lv.Columns.Add("Running", 58) | Out-Null
 $lv.Columns.Add("Status", 160) | Out-Null
 $lv.Columns.Add("Version", 120) | Out-Null
-$lv.Columns.Add("Details", 120) | Out-Null
-$lv.Columns.Add("How to disable", 640) | Out-Null
+$lv.Columns.Add("Details", 280) | Out-Null
+$lv.Columns.Add("How to disable", 400) | Out-Null
+$lv.Columns.Add("Path", 400) | Out-Null
 try { Enable-ListViewDoubleBuffer -ListView $lv } catch {}
 $form.Controls.Add($lv)
 $form.Controls.Add($pnlTop)
@@ -7061,7 +7394,7 @@ $miCopyRow.Add_Click({
     if ($lv.SelectedItems.Count -lt 1) { return }
     $it = $lv.SelectedItems[0]
     if ($it.Tag -eq "section") { return }
-    $labels = @("Name","Installed","Running","Status","Version","Details","How to disable")
+    $labels = @("Name","Installed","Running","Status","Version","Details","How to disable","Path")
     $lines = New-Object System.Collections.Generic.List[string]
     for ($i = 0; $i -lt $labels.Count; $i++) {
         $val = ""
@@ -7137,8 +7470,18 @@ function Get-ScanWorkGroups {
             { Scan-OperaAI }, { Scan-Comet }
         )},
         @{ Header = "Microsoft Apps"; Fns = @(
-            { Scan-SettingsAgent }, { Scan-ClickToDo }, { Scan-FileExplorerAI }, { Scan-FoundryLocal }, { Scan-GitHubCopilot }, { Scan-M365Copilot },
-            { Scan-NotepadAI }, { Scan-PaintAI }, { Scan-Recall }, { Scan-WindowsAIComponents }
+            { Scan-FoundryLocal }, { Scan-GitHubCopilot }, { Scan-M365Copilot },
+            { Scan-NotepadAI }, { Scan-PaintAI }
+        )},
+        @{ Header = "Microsoft Windows"; Fns = @(
+            { Scan-SettingsAgent },
+            { Scan-ClickToDo },
+            { Scan-ExperimentalAgenticFeatures },
+            { Scan-FileExplorerAI },
+            { Scan-Recall },
+            { Scan-SemanticSearch },
+            { Scan-WindowsAIComponents },
+            { Scan-StudioEffects }
         )},
         @{ Header = "Other Apps"; Fns = @(
             { Scan-AnythingLLM }, { Scan-ChatRTX }, { Scan-CherryStudio }, { Scan-ClaudeCode },
@@ -7218,6 +7561,11 @@ function Complete-AiScan {
                 $sec = if ($scanWatch) { [Math]::Round($scanWatch.Elapsed.TotalSeconds, 1) } else { 0 }
                 Set-ScanBarEnd -Percent 100
                 $summary = "Green: $installedCount | Blue (AI on, not running): $activatedCount | Red (running and AI on): $runningCount | Time: $sec sec"
+                $failN = [int]$script:ScanFailCount
+                if ($failN -gt 0) {
+                    $plural = if ($failN -gt 1) { "s" } else { "" }
+                    $summary = "$failN check$plural failed — see Log.txt | $summary"
+                }
                 if (Test-ScanCanceled) {
                     $lblStatus.Text = "Scan canceled. $summary"
                     Write-Log "Scan canceled. $summary"
@@ -7400,107 +7748,99 @@ function Step-AiScan {
                 $w.Phase = "scan"
             }
             "scan" {
-                $scanBatch = 0
-                while ($scanBatch -lt 3) {
-                $scanBatch++
-                if (Test-ScanCanceled) { break }
+                # Scan-* runs on a background worker. Window only paints results.
+                # Cancel is checked between functions. A Get-ChildItem already
+                # running cannot be aborted mid-walk.
+                if (Test-ScanCanceled) { $w.Phase = "done"; Complete-AiScan; return }
                 $groups = $w.Groups
                 if ($w.GroupIndex -ge @($groups).Count) { $w.Phase = "done"; Complete-AiScan; return }
                 $group = $groups[$w.GroupIndex]
                 $fns = @($group.Fns)
-                if ($w.FnIndex -eq 0 -and $group.Header) {
-                    $script:ScanRows += @{ Kind = "section"; Title = [string]$group.Header }
-                    if (-not $script:FilterDetected) {
-                        Add-SectionHeaderToListView -ListView $lv -Title ([string]$group.Header)
-                        Pulse-ScanListPaint
-                    }
-                }
                 if ($w.FnIndex -ge $fns.Count) {
                     $w.GroupIndex++
                     $w.FnIndex = 0
-                    continue
+                    $w.HeaderAdded = $false
+                    return
                 }
-                $w.Step++
-                $fn = $fns[$w.FnIndex]
-                $hint = (($fn.ToString() -replace '(?s).*Scan-', 'Scan-') -replace '\s.*', '')
-                $hint = Get-ScanStepLabel $hint
-                $totalSteps = [Math]::Max(1, $w.TotalSteps)
-                $pct = 12 + [int][Math]::Floor((($w.Step - 1) / $totalSteps) * 87)
-                if ($pct -gt 99) { $pct = 99 }
-                if ($pct -lt 12) { $pct = 12 }
-                Set-ScanBarEnd -Percent $pct
-                $lblStatus.Text = "Scanning $($w.Step) of $totalSteps : $hint"
-                try {
-                    $script:LastScanStepError = $null
-                    $r = Invoke-ScanFn $fn
-                    if ($script:LastScanStepError) {
-                        throw $script:LastScanStepError
+                if (-not $w.BgKind) {
+                    if ($w.FnIndex -eq 0 -and $group.Header -and -not $w.HeaderAdded) {
+                        $script:ScanRows += @{ Kind = "section"; Title = [string]$group.Header }
+                        if (-not $script:FilterDetected) {
+                            Add-SectionHeaderToListView -ListView $lv -Title ([string]$group.Header)
+                            Pulse-ScanListPaint
+                        }
+                        $w.HeaderAdded = $true
+                    }
+                    $fn = $fns[$w.FnIndex]
+                    $fnName = (($fn.ToString() -replace '(?s).*Scan-', 'Scan-') -replace '\s.*', '')
+                    $script:PasScanFnName = $fnName
+                    # Local Models share claim state. Run on the window so claims stay consistent.
+                    $useBg = ($group.Header -ne "Local Models")
+                    if ($useBg -and (Start-PasBackground -Kind "scanfn")) {
+                        $w.BgKind = "scanfn"
+                        $w.Step++
+                        $hint = Get-ScanStepLabel $fnName
+                        $totalSteps = [Math]::Max(1, $w.TotalSteps)
+                        $pct = 12 + [int][Math]::Floor((($w.Step - 1) / $totalSteps) * 87)
+                        if ($pct -gt 99) { $pct = 99 }
+                        if ($pct -lt 12) { $pct = 12 }
+                        Set-ScanBarEnd -Percent $pct
+                        $lblStatus.Text = "Scanning $($w.Step) of $totalSteps : $hint"
+                        return
+                    }
+                    # Fallback to window thread if background start fails
+                    $w.Step++
+                    $hint = Get-ScanStepLabel $fnName
+                    $totalSteps = [Math]::Max(1, $w.TotalSteps)
+                    $pct = 12 + [int][Math]::Floor((($w.Step - 1) / $totalSteps) * 87)
+                    if ($pct -gt 99) { $pct = 99 }
+                    if ($pct -lt 12) { $pct = 12 }
+                    Set-ScanBarEnd -Percent $pct
+                    $lblStatus.Text = "Scanning $($w.Step) of $totalSteps : $hint"
+                    try {
+                        $script:LastScanStepError = $null
+                        $r = Invoke-ScanFn $fn
+                        if ($script:LastScanStepError) { throw $script:LastScanStepError }
+                    } catch {
+                        Write-ErrorLog "Error running scanner: $($fn.ToString())" -ErrorRecord $_
+                        $script:ScanFailCount = [int]$script:ScanFailCount + 1
+                        $r = New-Result "Scanner Error" $false "Error" $_.Exception.Message
+                        $r.Running = "No"
                     }
                     if ($r) {
                         $r.Running = ""
-                        if ($r.Name -like "Ollama*") {
-                            if ($w.OllamaLoaded.Count -gt 0) {
-                                $r.Details = (($r.Details + " | Loaded in memory: " + ($w.OllamaLoaded -join ", ")).Trim(" |"))
-                                $watchNote = Get-WatchedLoadedModelNote $w.OllamaLoaded
-                                if ($watchNote) { $r.Details = (($r.Details + " | " + $watchNote).Trim(" |")) }
-                            } elseif ($r.Installed) {
-                                $r.Details = (($r.Details + " | No model loaded in memory").Trim(" |"))
-                            }
-                        } elseif ($r.Name -like "LM Studio*") {
-                            if ($w.LmStudioLoaded.Count -gt 0) {
-                                $r.Details = (($r.Details + " | Loaded in memory: " + ($w.LmStudioLoaded -join ", ")).Trim(" |"))
-                                $watchNote = Get-WatchedLoadedModelNote $w.LmStudioLoaded
-                                if ($watchNote) { $r.Details = (($r.Details + " | " + $watchNote).Trim(" |")) }
-                            } elseif ($r.Installed) {
-                                $r.Details = (($r.Details + " | No model loaded in memory").Trim(" |"))
-                            }
-                        } elseif ($r.Name -like "llama.cpp*") {
-                            $llamaIds = @(Get-LlamaCppLoadedModels)
-                            if ($llamaIds.Count -gt 0) {
-                                $r.Details = (($r.Details + " | Loaded in memory: " + ($llamaIds -join ", ")).Trim(" |"))
-                                $watchNote = Get-WatchedLoadedModelNote $llamaIds
-                                if ($watchNote) { $r.Details = (($r.Details + " | " + $watchNote).Trim(" |")) }
-                            }
-                        } elseif ($r.Name -like "LocalAI*") {
-                            $localAiIds = @(Get-LocalAiLoadedModels)
-                            if ($localAiIds.Count -gt 0) {
-                                $r.Details = (($r.Details + " | Loaded in memory: " + ($localAiIds -join ", ")).Trim(" |"))
-                                $watchNote = Get-WatchedLoadedModelNote $localAiIds
-                                if ($watchNote) { $r.Details = (($r.Details + " | " + $watchNote).Trim(" |")) }
-                            }
-                        } elseif ($r.Name -like "KoboldCPP*") {
-                            $kbIds = @(Get-KoboldCppLoadedModels)
-                            if ($kbIds.Count -gt 0) {
-                                $r.Details = (($r.Details + " | Loaded in memory: " + ($kbIds -join ", ")).Trim(" |"))
-                                $watchNote = Get-WatchedLoadedModelNote $kbIds
-                                if ($watchNote) { $r.Details = (($r.Details + " | " + $watchNote).Trim(" |")) }
-                            }
-                        }
                         $w.Results += $r
                         $script:ScanRows += @{ Kind = "result"; Result = $r }
                         if (-not $script:FilterDetected -or (Test-RowIsDetected $r)) {
                             Add-ResultToListView -ListView $lv -r $r
                             Pulse-ScanListPaint
                         }
-                        if ($r.Installed -or ($r.Running -like "Yes*")) {
-                            $tag = "FOUND"
-                            if ($r.Activated -eq "Deactivated") { $tag = "FOUND (AI off)" }
-                            Write-Log ("{0}: {1} | Installed={2} | Running={3} | Status={4} | Version={5} | Details={6}" -f $tag, $r.Name, $(if ($r.Installed) {"Yes"} else {"No"}), $r.Running, $r.Activated, $r.Version, $r.Details)
-                        }
                     }
-                } catch {
-                    Write-ErrorLog "Error running scanner: $($fn.ToString())" -ErrorRecord $_
-                    $errResult = New-Result "Scanner Error" $false "Error" $_.Exception.Message
-                    $errResult.Running = "No"
-                    $w.Results += $errResult
-                    $script:ScanRows += @{ Kind = "result"; Result = $errResult }
-                    if (-not $script:FilterDetected -or (Test-RowIsDetected $errResult)) {
-                        Add-ResultToListView -ListView $lv -r $errResult
+                    $w.FnIndex++
+                    return
+                }
+                $bg = Read-PasBackground
+                if (-not $bg.Done) { return }
+                $w.BgKind = $null
+                $r = $null
+                if ($bg.Failed) { $script:ScanFailCount = [int]$script:ScanFailCount + 1 }
+                if (-not $bg.Failed -and $bg.Result -and @($bg.Result).Count -gt 0) { $r = @($bg.Result)[-1] }
+                if ($r) {
+                    $r.Running = ""
+                    $w.Results += $r
+                    $script:ScanRows += @{ Kind = "result"; Result = $r }
+                    if (-not $script:FilterDetected -or (Test-RowIsDetected $r)) {
+                        Add-ResultToListView -ListView $lv -r $r
                         Pulse-ScanListPaint
+                    }
+                    if ($r.Installed -or ($r.Running -like "Yes*")) {
+                        $tag = "FOUND"
+                        if ($r.Activated -eq "Deactivated") { $tag = "FOUND (AI off)" }
+                        Write-Log ("{0}: {1} | Installed={2} | Running={3} | Status={4} | Version={5} | Details={6}" -f $tag, $r.Name, $(if ($r.Installed) {"Yes"} else {"No"}), $r.Running, $r.Activated, $r.Version, $r.Details)
                     }
                 }
                 $w.FnIndex++
-                }
+                return
             }
             default { Complete-AiScan }
         }
@@ -7524,6 +7864,7 @@ function Start-AiScanSession {
         $script:ScanSync = [hashtable]::Synchronized(@{ Cancel = $false })
     }
     $script:ScanSync.Cancel = $false
+    try { Start-PrefCacheWorker } catch {}
     $btnScan.Enabled = $false
     $btnCancel.Visible = $true
     $btnCancel.Enabled = $true
@@ -7557,6 +7898,7 @@ function Start-AiScanSession {
         Groups = $groups
         GroupIndex = 0
         FnIndex = 0
+        HeaderAdded = $false
         Step = 0
         TotalSteps = $total
         Results = @()
@@ -7605,9 +7947,9 @@ $btnExport.Add_Click({
             return '"' + $t + '"'
         }
         $lines = New-Object System.Collections.Generic.List[string]
-        $headers = @("AI Name","Installed","Running","Status","Version","Details","How to disable")
+        $headers = @("AI Name","Installed","Running","Status","Version","Details","How to disable","Path")
         [void]$lines.Add(($headers | ForEach-Object { Escape-CsvField $_ }) -join ",")
-        $sectionNames = @("Major Apps","Local Models","Browser-based","Microsoft Apps","Other Apps")
+        $sectionNames = @("Major Apps","Local Models","Browser-based","Microsoft Apps","Microsoft Windows","Other Apps")
         foreach ($item in $lv.Items) {
             $name0 = ""
             if ($item.SubItems.Count -gt 0) { $name0 = [string]$item.SubItems[0].Text }
