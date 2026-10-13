@@ -7,8 +7,8 @@
 # That is not a missing function closer. Count braces outside strings.
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.7.7"
-$script:AppBuild = "0190"
+$script:AppVersion = "1.7.8"
+$script:AppBuild = "0198"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -487,10 +487,18 @@ function Get-FileVersionSafe {
 
 function Get-RegValueSafe {
     param([string]$Path, [string]$Name)
+    if (-not $script:RegCache) { $script:RegCache = @{} }
+    $key = "$Path|$Name"
+    if ($script:RegCache.ContainsKey($key)) { return $script:RegCache[$key] }
     try {
         $p = Get-ItemProperty -Path $Path -Name $Name -ErrorAction Stop
-        return $p.$Name
-    } catch { return $null }
+        $val = $p.$Name
+        $script:RegCache[$key] = $val
+        return $val
+    } catch {
+        $script:RegCache[$key] = $null
+        return $null
+    }
 }
 
 function Read-NotepadSettingsDatFile {
@@ -778,8 +786,8 @@ function Get-LocalHttpResponse {
     try {
         $req = [System.Net.HttpWebRequest]::Create($Uri)
         $req.Method = "GET"
-        $req.Timeout = 1000
-        $req.ReadWriteTimeout = 1000
+        $req.Timeout = 500
+        $req.ReadWriteTimeout = 500
         $req.AllowAutoRedirect = $false
         $req.Proxy = $null
         $req.UserAgent = "PortableAIScanner"
@@ -1045,15 +1053,17 @@ function New-Result {
     }
 }
 
+# How to disable rule: the first word after every ">" must start with an uppercase letter.
+# Exception: sentence continuations (e.g. "then turn off each action") stay lowercase.
 function Get-HowToDisable {
     param([string]$Name)
     $apps = "Windows Settings > Apps > Installed apps"
     switch -Wildcard ($Name) {
-        "Copilot (Microsoft)" { return "$apps > Copilot > Uninstall. Also Settings > Personalization > Taskbar > turn off Copilot." }
-        "Microsoft 365 Copilot*" { return "$apps > Microsoft 365 Copilot > Uninstall. In Word, Excel, or PowerPoint: File > Options > Copilot > turn off Enable Copilot." }
-        "Notepad*" { return "Open Notepad > gear icon (Settings) > AI Features > turn off Writing tools." }
-        "Paint*" { return "Windows Settings > Privacy & security > Text and image generation > turn off Paint if listed. Paint itself has no simple off switch for every AI tool." }
-        "Google Chrome + Gemini*" { return "Open Chrome > three-dot menu > Settings > System > turn off On-device AI." }
+        "Copilot (Microsoft)" { return "$apps > Copilot > Uninstall. Also Settings > Personalization > Taskbar > Turn off Copilot." }
+        "Microsoft 365 Copilot*" { return "$apps > Microsoft 365 Copilot > Uninstall. In Word, Excel, or PowerPoint: File > Options > Copilot > Turn off Enable Copilot." }
+        "Notepad*" { return "Open Notepad > Gear icon (Settings) > AI Features > Turn off Writing tools." }
+        "Paint*" { return "Windows Settings > Privacy & security > Text and image generation > Turn off Paint if listed. Paint itself has no simple off switch for every AI tool." }
+        "Google Chrome + Gemini*" { return "Open Chrome > Three-dot menu > Settings > System > Turn off On-device AI." }
         "ChatGPT*" { return "$apps > ChatGPT > Uninstall." }
         "Gemini (Google)*" { return "$apps > Gemini > Uninstall." }
         "Claude Code*" { return "$apps > Claude Code if listed > Uninstall. Or delete claude.exe under your user .local\bin folder." }
@@ -1063,27 +1073,27 @@ function Get-HowToDisable {
         "G-Assist (NVIDIA)*" { return "Open the NVIDIA App > Discover > G-Assist > Uninstall. Or $apps > NVIDIA App > Modify and remove G-Assist." }
         "LibreChat*" { return "If LibreChat appears in $apps, click Uninstall. If you use Docker Desktop, open Docker Desktop and stop or delete the LibreChat container." }
         "Perplexity" { return "$apps > Perplexity > Uninstall." }
-        "Microsoft Edge*" { return "Open Edge > three-dot menu > Settings > Sidebar > turn off Copilot. Then Settings > System and performance > turn off On-device AI if that switch is listed." }
+        "Microsoft Edge*" { return "Open Edge > Three-dot menu > Settings > Sidebar > Turn off Copilot. Then Settings > System and performance > Turn off On-device AI if that switch is listed." }
         "Ollama*" { return "$apps > Ollama > Uninstall. That also removes its downloaded models." }
-        "LM Studio*" { return "Open LM Studio > My Models > remove models you do not want. Or $apps > LM Studio > Uninstall." }
-        "Jan*" { return "Open Jan > Hub / Models > delete models. Or $apps > Jan > Uninstall." }
-        "GPT4All*" { return "Open GPT4All > Downloads / Models > remove models. Or $apps > GPT4All > Uninstall." }
+        "LM Studio*" { return "Open LM Studio > My Models > Remove models you do not want. Or $apps > LM Studio > Uninstall." }
+        "Jan*" { return "Open Jan > Hub / Models > Delete models. Or $apps > Jan > Uninstall." }
+        "GPT4All*" { return "Open GPT4All > Downloads / Models > Remove models. Or $apps > GPT4All > Uninstall." }
         "Cursor*" { return "$apps > Cursor > Uninstall." }
-        "Recall*" { return "Windows Settings > Privacy & security > Recall & snapshots > turn off Save snapshots. To remove the feature: search Turn Windows features on or off > uncheck Recall > OK > restart." }
-        "Click to Do*" { return "Windows Settings > Privacy & security > Click to Do > turn it Off." }
+        "Recall*" { return "Windows Settings > Privacy & security > Recall & snapshots > Turn off Save snapshots. To remove the feature: search Turn Windows features on or off > Uncheck Recall > OK > Restart." }
+        "Click to Do*" { return "Windows Settings > Privacy & security > Click to Do > Turn it Off." }
         "Agent in Settings*" { return (Get-SettingsAgentDisableText) }
         "File Explorer + AI*" { return "Settings > Apps > Actions, then turn off each action. Restart if the menu is still there. Do not edit the registry." }
-        "Windows On-Device*" { return "Windows Settings > Privacy & security > Text and image generation > turn the feature off. Settings > System > AI components. Only Image Creation can be removed there if it is listed." }
-        "Experimental Agentic*" { return "Windows Settings > System > AI components > Experimental agentic features > turn it Off." }
+        "Windows On-Device*" { return "Windows Settings > Privacy & security > Text and image generation > Turn the feature off. Settings > System > AI components. Only Image Creation can be removed there if it is listed." }
+        "Experimental Agentic*" { return "Windows Settings > System > AI components > Experimental agentic features > Turn it Off." }
         "Semantic Search*" { return "Exclude folders from indexing in Windows Settings > Privacy & security > Searching Windows. Full off is limited on Copilot+ PCs." }
-        "Windows Studio Effects*" { return "Windows Settings > Bluetooth & devices > Cameras > select your camera > turn off Studio Effects. Or use Quick Settings (Win+A) > Studio Effects." }
+        "Windows Studio Effects*" { return "Windows Settings > Bluetooth & devices > Cameras > Select your camera > Turn off Studio Effects. Or use Quick Settings (Win+A) > Studio Effects." }
         "GitHub Copilot*" { return "Open VS Code > Extensions > GitHub Copilot > Disable or Uninstall." }
-        "ComfyUI*" { return "$apps > ComfyUI if listed > Uninstall. If it is only a folder app, open Start > right-click the app shortcut > Uninstall." }
-        "Opera*" { return "Open Opera > Settings > Sidebar > turn off Aria / Opera AI." }
-        "Brave*" { return "Open Brave > Settings > Leo > turn off Leo AI." }
-        "Perplexity Comet*" { return "Open Comet > Settings > turn off AI features. Or $apps > Comet > Uninstall." }
+        "ComfyUI*" { return "$apps > ComfyUI if listed > Uninstall. If it is only a folder app, open Start > Right-click the app shortcut > Uninstall." }
+        "Opera*" { return "Open Opera > Settings > Sidebar > Turn off Aria / Opera AI." }
+        "Brave*" { return "Open Brave > Settings > Leo > Turn off Leo AI." }
+        "Perplexity Comet*" { return "Open Comet > Settings > Turn off AI features. Or $apps > Comet > Uninstall." }
         "Mozilla Firefox*" {
-            return "Firefox 148+: Settings > AI Controls > turn on Block AI enhancements. Firefox 147: Settings > General > Browsing > turn off Enable link previews. Firefox 136-146: Settings > General > Browsing and Settings > General > Browser Layout > uncheck AI chatbot if listed. Firefox 130-135: Settings > Firefox Labs > turn off AI chatbot. Settings > General > Tabs is smart tab groups, not Labs."
+            return "Firefox 148+: Settings > AI Controls > Turn on Block AI enhancements. Firefox 147: Settings > General > Browsing > Turn off Enable link previews. Firefox 136-146: Settings > General > Browsing and Settings > General > Browser Layout > Uncheck AI chatbot if listed. Firefox 130-135: Settings > Firefox Labs > Turn off AI chatbot. Settings > General > Tabs is smart tab groups, not Labs."
         }
         "Grok*" { return "$apps > Grok > Uninstall if listed. Otherwise use the website only and sign out." }
         "Windsurf*" { return "$apps > Windsurf > Uninstall." }
@@ -1095,7 +1105,7 @@ function Get-HowToDisable {
         "KoboldCPP*" { return "If KoboldCPP appears in $apps, click Uninstall. If it is only a downloaded program, right-click it in Start or Downloads and choose Uninstall when Windows offers it." }
         "Open WebUI*" { return "If Open WebUI appears in $apps, click Uninstall. If you use Docker Desktop, open Docker Desktop and stop or delete the Open WebUI container." }
         "AnythingLLM*" { return "$apps > AnythingLLM > Uninstall." }
-        "text-generation-webui*" { return "If it appears in $apps, click Uninstall. If it is only a folder app, use Start > right-click the shortcut > Uninstall when offered." }
+        "text-generation-webui*" { return "If it appears in $apps, click Uninstall. If it is only a folder app, use Start > Right-click the shortcut > Uninstall when offered." }
         "Dolphin*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "Other Local Models*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "Qwen*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
@@ -1118,29 +1128,13 @@ function Get-HowToDisable {
         "Ornith*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "MiMo*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "Foundry Local*" { return "$apps > Foundry Local > Uninstall. Or Settings > System > AI components if listed." }
-        default { return "$apps > find this app > Uninstall. If it is a browser feature, open that browser Settings and turn the AI option off." }
+        default { return "$apps > Find this app > Uninstall. If it is a browser feature, open that browser Settings and turn the AI option off." }
     }
 }
 
 # Running = Yes whenever the browser or app process is open.
 # Red only if Running = Yes and Status is Activated or Model loaded.
 
-
-function Get-WatchedLoadedModelNote {
-    param([string[]]$Loaded)
-    $watch = @("promptlock", "prompt-lock", "prompt_lock")
-    $hits = @()
-    foreach ($n in @($Loaded)) {
-        $raw = [string]$n
-        if (-not $raw) { continue }
-        $leaf = $raw
-        if ($raw -match "^([^:/\\]+)") { $leaf = $Matches[1] }
-        $leaf = $leaf.Trim().ToLowerInvariant()
-        if ($watch -contains $leaf -and $hits -notcontains $raw) { $hits += $raw }
-    }
-    if ($hits.Count -eq 0) { return $null }
-    return "Loaded name matches " + ($hits -join ", ")
-}
 
 function Get-OllamaLoadedModels {
     # Returns model names currently loaded in Ollama memory (HTTP /api/ps only). Empty array = none loaded.
@@ -1845,7 +1839,7 @@ function Scan-Copilot {
     # Present and not policy-off is Activated. Policy off is Deactivated.
     # Open Copilot window + Activated = Red. Other Major Apps stay Installed.
     $r = New-Result "Copilot (Microsoft)"
-    $r.DisableHint = "Windows Settings > Apps > Installed apps > Copilot > Uninstall. Then Settings > Personalization > Taskbar > turn off Copilot if the button is still there."
+    $r.DisableHint = "Windows Settings > Apps > Installed apps > Copilot > Uninstall. Then Settings > Personalization > Taskbar > Turn off Copilot if the button is still there."
 
     $pkgs = Get-AppxByName "Microsoft.Copilot*"
     if (-not $pkgs) { $pkgs = Get-AppxByName "MicrosoftWindows.Copilot*" }
@@ -1888,8 +1882,8 @@ function Scan-Copilot {
         }
         if ($turnedOff) {
             Set-ScanStatus $r "Deactivated"
-            $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows Copilot > turn on Turn off Windows Copilot."
-            $r.Details = "AI off | turned off by policy | App: $($pkg.Name)"
+            $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows Copilot > Turn on Turn off Windows Copilot."
+            $r.Details = "AI off | Turned off by policy | App: $($pkg.Name)"
         } else {
             Set-ScanStatus $r "Activated"
             $r.Details = "AI on | App: $($pkg.Name)"
@@ -1897,8 +1891,22 @@ function Scan-Copilot {
     } else {
         Set-ScanStatus $r "Not Installed"
         $r.DisableHint = ""
+        $r.Path = ""
         if ($leftover.Count -gt 0) {
-            $r.Details = "Leftover folder; no app: " + ($leftover -join "; ")
+            $hasReg = $leftover -contains "WindowsCopilot activatable class"
+            $hasProto = $leftover -contains "ms-copilot protocol"
+            $hasOther = $leftover -match "Other Copilot"
+            if ($hasReg -and $hasProto) {
+                $r.Details = "Copilot is not installed. Registry key and protocol remain."
+            } elseif ($hasReg) {
+                $r.Details = "Copilot is not installed. A registry key remains."
+            } elseif ($hasProto) {
+                $r.Details = "Copilot is not installed. A protocol remains."
+            } elseif ($hasOther) {
+                $r.Details = "Copilot is not installed. Other Copilot packages remain."
+            } else {
+                $r.Details = "Copilot is not installed. A system entry remains."
+            }
         } else {
             $r.Details = "No Copilot app found"
         }
@@ -1957,11 +1965,11 @@ function Scan-M365Copilot {
             if ("$en" -eq "0") { $userOff = $true }
             elseif ("$en" -eq "1") { $on = $true }
         }
-        $userHow = "Windows Settings > Apps > Installed apps > Microsoft 365 Copilot > Uninstall. In Word, Excel, or PowerPoint: File > Options > Copilot > turn off Enable Copilot."
+        $userHow = "Windows Settings > Apps > Installed apps > Microsoft 365 Copilot > Uninstall. In Word, Excel, or PowerPoint: File > Options > Copilot > Turn off Enable Copilot."
         $appBit = [string]$r.Details
         if ($policyOff) {
             Set-ScanStatus $r "Deactivated"
-            $r.Details = "AI off | turned off by policy | $appBit"
+            $r.Details = "AI off | Turned off by policy | $appBit"
             $r.DisableHint = "Controlled by your administrator."
         } elseif ($userOff) {
             Set-ScanStatus $r "Deactivated"
@@ -2013,7 +2021,7 @@ function Scan-NotepadAI {
     $family = ""
     try { $family = [string]$pkg.PackageFamilyName } catch {}
     $rewrite = Get-NotepadRewriteSetting -PackageFamilyName $family
-    $userHow = "Open Notepad > gear icon (Settings) > AI Features > turn off Writing tools."
+    $userHow = "Open Notepad > Gear icon (Settings) > AI Features > Turn off Writing tools."
     $adminHow = "Controlled by your administrator."
     $adminOff = ($null -ne $pol -and [int]$pol -eq 1)
     $tooOld = $false
@@ -2032,15 +2040,15 @@ function Scan-NotepadAI {
 
     if ($adminOff) {
         Set-ScanStatus $r "Deactivated"
-        $hints += "Disabled by policy"
+        $hints += "AI off | Turned off by policy"
         $r.DisableHint = $adminHow
     } elseif ($fileOff) {
         Set-ScanStatus $r "Deactivated"
-        $hints += "AI writing tools off"
+        $hints += "AI off | Writing tools off"
         $r.DisableHint = $userHow
     } elseif ($fileOn) {
         Set-ScanStatus $r "Activated"
-        $hints += "AI writing tools on"
+        $hints += "AI on | Writing tools on"
         $r.DisableHint = $userHow
     } elseif ($fileUnread) {
         $notepadOpen = $false
@@ -2051,7 +2059,7 @@ function Scan-NotepadAI {
             $r.DisableHint = $userHow
         } else {
             Set-ScanStatus $r "Unknown"
-            $hints += "Writing tools switch was not read from settings.dat"
+            $hints += "Writing tools switch was not read"
             $r.DisableHint = $userHow
         }
     } else {
@@ -2059,6 +2067,10 @@ function Scan-NotepadAI {
         $hints += "Switch never saved; Microsoft default is on"
         $r.DisableHint = $userHow
     }
+    $ai = @($hints | Where-Object { $_ -like "AI *" })
+    $app = @($hints | Where-Object { $_ -like "App:*" })
+    $rest = @($hints | Where-Object { $_ -notlike "AI *" -and $_ -notlike "App:*" })
+    $hints = @($ai + $rest + $app)
     $r.Details = $hints -join " | "
     return $r
 }
@@ -2084,45 +2096,45 @@ function Scan-PaintAI {
         if ($null -ne $v -and [int]$v -eq 1) { $disabled += $n }
         else { $enabledMissing += $n }
     }
-    $privacyHow = "Windows Settings > Privacy & security > Text and image generation > turn off Paint if listed. Paint itself has no simple off switch for every AI tool."
+    $privacyHow = "Windows Settings > Privacy & security > Text and image generation > Turn off Paint if listed. Paint itself has no simple off switch for every AI tool."
     $adminHow = "Controlled by your administrator."
     $consent = Get-SystemAiConsent
     if ($disabled.Count -eq $names.Count) {
         Set-ScanStatus $r "Deactivated"
-        $hints += "Disabled by policy"
+        $hints += "AI off | Turned off by policy"
         $r.DisableHint = $adminHow
     } elseif ($disabled.Count -gt 0) {
         Set-ScanStatus $r "Activated"
         $hints = @("Some Paint AI tools may still be on") + $hints
-        $hints += "Some Paint AI tools off"
+        $hints += "AI off | Some Paint AI tools off"
         $r.DisableHint = $adminHow
     } else {
         if ($consent.Denied) {
             Set-ScanStatus $r "Deactivated"
-            $hints += "Text and image generation off"
-            $hints += ($consent.Signals -join "; ")
+            $hints += "AI off | Text and image generation off"
             $r.DisableHint = $privacyHow
         } elseif ($consent.Allowed) {
             Set-ScanStatus $r "Activated"
-            $hints += "Text and image generation allowed"
-            $hints += ($consent.Signals -join "; ")
+            $hints += "AI on | Text and image generation allowed"
             $r.DisableHint = $privacyHow
         } else {
             Set-ScanStatus $r "Unknown"
-            $hints += "AI switch not stored"
-            if ($consent.Signals.Count -gt 0) { $hints += ($consent.Signals -join "; ") }
+            $hints += "AI on/off not read"
             $r.DisableHint = $privacyHow
         }
     }
     if ($consent.Denied) {
-        $sig = $consent.Signals -join "; "
-        if ($sig -and ($hints -notcontains $sig)) { $hints += $sig }
+
         if ($r.Activated -ne "Deactivated") {
             Set-ScanStatus $r "Deactivated"
-            if ($hints -notcontains "Text and image generation off") { $hints += "Text and image generation off" }
+            if ($hints -notcontains "Text and image generation off") { $hints += "AI off | Text and image generation off" }
         }
         if ($disabled.Count -eq 0) { $r.DisableHint = $privacyHow }
     }
+    $ai = @($hints | Where-Object { $_ -like "AI *" })
+    $app = @($hints | Where-Object { $_ -like "App:*" })
+    $rest = @($hints | Where-Object { $_ -notlike "AI *" -and $_ -notlike "App:*" })
+    $hints = @($ai + $rest + $app)
     $r.Details = $hints -join " | "
     $lead = "Some Paint AI tools may still be on"
     if ($r.Activated -eq "Deactivated") {
@@ -2146,7 +2158,7 @@ function Scan-PaintAI {
 #   4. Default on vs off (absent pref is not always off)
 #   5. Details order: AI on or AI off first, folder words in the middle,
 #      Browser path last. Do not put the status sentence or policy key names
-#      in Details. Policy off is "turned off by policy".
+#      in Details. Policy off is "Turned off by policy".
 # Current cutoffs: Chrome 126, Edge 112, Opera 100, Brave 1.52 / Chromium 112,
 # Firefox 130 (Labs), Firefox 148 (AI Controls).
 
@@ -2205,6 +2217,7 @@ function Start-PrefCacheWorker {
             $def = Join-Path $root "Default\Preferences"
             if (Test-Path -LiteralPath $def) { $files += $def }
             try {
+                if (Test-ScanCanceled) { break }
                 foreach ($d in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | Select-Object -First 12)) {
                     if ($d.Name -notlike "Profile*") { continue }
                     $pref = Join-Path $d.FullName "Preferences"
@@ -2252,6 +2265,7 @@ function Get-ChromiumPrefFiles {
         $def = Join-Path $root "Default\Preferences"
         if ((Test-Path -LiteralPath $def) -and -not $files.Contains($def)) { [void]$files.Add($def) }
         try {
+            if (Test-ScanCanceled) { break }
             $dirs = @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue | Select-Object -First 24)
             foreach ($d in $dirs) {
                 if ($files.Count -ge $MaxFiles) { break }
@@ -2325,10 +2339,10 @@ function Get-OptGuideFolderDetail {
             }
         }
     }
-    if ($weightsPresent) { $detail = "weights.bin ~${weightsSize}GB on disk" }
-    elseif ($folderPresent) { $detail = "model files present (download may be incomplete)" }
-    elseif ($emptyFolder) { $detail = "model folder empty" }
-    else { $detail = "no model folder" }
+    if ($weightsPresent) { $detail = "Weights.bin ~${weightsSize}GB on disk" }
+    elseif ($folderPresent) { $detail = "Model files present (download may be incomplete)" }
+    elseif ($emptyFolder) { $detail = "Model folder empty" }
+    else { $detail = "No model folder" }
     return @{ Detail = $detail; HasFiles = $folderPresent; HasWeights = $weightsPresent }
 }
 
@@ -2484,7 +2498,7 @@ function Start-ChromeSettingsRecheck {
 
 # Browser Details order. Do not put the status reason in front of AI on / AI off.
 # 1. AI on, AI off, AI not in this version, Could not read settings, or AI on/off key not stored
-# 2. Extra switch only if read (Edge: Copilot sidebar on/off). Policy off: turned off by policy
+# 2. Extra switch only if read (Edge: Copilot sidebar on/off). Policy off: Turned off by policy
 # 3. Folder words: no model folder, model folder empty, model files present, weights.bin size
 # 4. Browser path last. A missing browser has no path.
 # Browser Details order: AI on or AI off first when the switch was read,
@@ -2518,7 +2532,7 @@ function Move-BrowserPathLast {
 function Scan-GeminiChrome {
     # Chrome: Gemini Nano cutoff 126. Settings > System > On-device AI.
     $r = New-Result "Google Chrome + Gemini"
-    $r.DisableHint = "Chrome Settings > System > turn off On-device AI."
+    $r.DisableHint = "Chrome Settings > System > Turn off On-device AI."
 
     $chromeExe = Get-NewestExistingExe @(
         "${env:ProgramFiles}\Google\Chrome\Application\chrome.exe",
@@ -2638,7 +2652,7 @@ function Scan-GeminiChrome {
     # Missing key: Chrome default is on.
     if ($policyDisabled) {
         Set-ScanStatus $r "Deactivated"
-        $r.Details += " | AI off | turned off by policy | $modelDetail"
+        $r.Details += " | AI off | Turned off by policy | $modelDetail"
         if ($folderPresent -or $weightsPresent) { $r.DisableHint = "" }
     } elseif ($sawOn) {
         Set-ScanStatus $r "Activated"
@@ -2704,12 +2718,14 @@ function Scan-ChatGPT {
         Set-ScanStatus $r "Installed"
     } elseif ($pkgFolder) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $pkgFolder"
+        $r.Details = "ChatGPT is not installed. A data folder remains."
+        $r.Path = $pkgFolder
         Set-ScanStatus $r "Not Installed" "Leftover package folder"
         $r.DisableHint = ""
     } elseif (Test-Path "$env:USERPROFILE\.codex") {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $env:USERPROFILE\.codex"
+        $r.Details = "ChatGPT is not installed. A data folder remains."
+        $r.Path = "$env:USERPROFILE\.codex"
         Set-ScanStatus $r "Not Installed" "Leftover data folder"
         $r.DisableHint = ""
     } else {
@@ -2767,7 +2783,8 @@ function Scan-Claude {
         }
         if ($left.Count -gt 0) {
             $r.Installed = $false
-            $r.Details = "Leftover folder; no app: " + ($left -join "; ")
+            $r.Details = "Claude is not installed. A data folder remains."
+            $r.Path = ($left -join "; ")
             Set-ScanStatus $r "Not Installed" "Leftover data folder"
             $r.DisableHint = ""
         }
@@ -2905,7 +2922,8 @@ function Scan-GeminiDesktop {
         Set-ScanStatus $r "Installed"
     } elseif ($geminiFolder) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $geminiRoot"
+        $r.Details = "Gemini is not installed. A data folder remains."
+        $r.Path = $geminiRoot
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe or Apps entry"
         $r.DisableHint = ""
     } else {
@@ -2918,7 +2936,7 @@ function Scan-GeminiDesktop {
 
 function Scan-ClaudeCode {
     $r = New-Result "Claude Code (Anthropic)"
-    $r.DisableHint = "Windows Settings > Apps > Installed apps > Claude Code > Uninstall. If it is not listed, File Explorer > your user folder > .local\bin > delete claude.exe."
+    $r.DisableHint = "Windows Settings > Apps > Installed apps > Claude Code > Uninstall. If it is not listed, File Explorer > Your user folder > .local\bin > Delete claude.exe."
     $exe = Test-PathAny @(
         "$env:USERPROFILE\.local\bin\claude.exe",
         "$env:LOCALAPPDATA\Programs\claude-code\claude.exe",
@@ -2989,7 +3007,8 @@ function Scan-CherryStudio {
             Set-ScanStatus $r "Installed" "Uninstall registry"
         } elseif ($data) {
             $r.Installed = $false
-            $r.Details = "Leftover folder; no app: $data"
+            $r.Details = "Cherry Studio is not installed. A data folder remains."
+            $r.Path = $data
             Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
             $r.DisableHint = ""
         } else {
@@ -3032,7 +3051,8 @@ function Scan-ChatRTX {
         Set-ScanStatus $r "Installed"
     } elseif ($models) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $models"
+        $r.Details = "ChatRTX is not installed. A data folder remains."
+        $r.Path = $models
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
         $r.DisableHint = ""
     } else {
@@ -3074,7 +3094,9 @@ function Scan-GAssist {
         Set-ScanStatus $r "Installed"
     } elseif ($leftover) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $leftover"
+        $r.Details = "G-Assist is not installed. A data folder remains."
+    } elseif ($leftover) {
+        $r.Path = $leftover
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe or Apps entry"
         $r.DisableHint = ""
     } else {
@@ -3113,7 +3135,8 @@ function Scan-LibreChat {
         Set-ScanStatus $r "Installed"
     } elseif ($folder) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $folder"
+        $r.Details = "LibreChat is not installed. A data folder remains."
+        $r.Path = $folder
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no launcher"
         $r.DisableHint = ""
     } else {
@@ -3140,7 +3163,8 @@ function Scan-Perplexity {
         $r.Version = Get-FileVersionSafe $exe
     } elseif (Test-Path "$env:APPDATA\Perplexity") {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $env:APPDATA\Perplexity"
+        $r.Details = "Perplexity is not installed. A data folder remains."
+        $r.Path = "$env:APPDATA\Perplexity"
         Set-ScanStatus $r "Not Installed"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -3152,7 +3176,7 @@ function Scan-Perplexity {
 function Scan-EdgeCopilot {
     # Edge: Copilot sidebar + OptGuide weights. First version 112.
     $r = New-Result "Microsoft Edge + Copilot"
-    $r.DisableHint = "Edge Settings > Sidebar > turn off Copilot. Then Settings > System and performance > turn off On-device AI if that switch is listed."
+    $r.DisableHint = "Edge Settings > Sidebar > Turn off Copilot. Then Settings > System and performance > Turn off On-device AI if that switch is listed."
     $edge = Get-NewestExistingExe @(
         "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
         "${env:ProgramFiles}\Microsoft\Edge\Application\msedge.exe",
@@ -3184,7 +3208,6 @@ function Scan-EdgeCopilot {
     }
 
     # Hard Edge policy only. Recommended is not an administrator lock.
-    $activatedHints = @()
     $policyOff = $false
     $sidebarOn = $false
     $userSidebarOff = $false
@@ -3198,17 +3221,13 @@ function Scan-EdgeCopilot {
             if (-not $props) { continue }
             if ($null -ne $props.HubsSidebarEnabled -and $props.HubsSidebarEnabled -eq 0) {
                 $policyOff = $true
-                $activatedHints += "Policy HubsSidebarEnabled=0"
             }
             if ($null -ne $props.CopilotPage -and $props.CopilotPage -eq 0) {
                 $policyOff = $true
-                $activatedHints += "Policy CopilotPage=0"
             }
             if ($null -ne $props.HubsSidebarEnabled -and $props.HubsSidebarEnabled -eq 1) {
-                $activatedHints += "Policy HubsSidebarEnabled=1"
             }
             if ($null -ne $props.CopilotPage -and $props.CopilotPage -eq 1) {
-                $activatedHints += "Policy CopilotPage=1"
             }
         } catch {}
     }
@@ -3259,7 +3278,6 @@ function Scan-EdgeCopilot {
             $od = Get-ItemProperty -Path $p -Name "GenAILocalFoundationalModelSettings" -ErrorAction SilentlyContinue
             if ($null -ne $od -and $od.GenAILocalFoundationalModelSettings -eq 1) {
                 $policyOff = $true
-                $activatedHints += "Policy GenAILocalFoundationalModelSettings=1 (do not download)"
             }
         } catch {}
     }
@@ -3273,13 +3291,13 @@ function Scan-EdgeCopilot {
     $sideTxt = ""
     if ($sidebarOn) { $sideTxt = "Copilot sidebar on" }
     elseif ($userSidebarOff) { $sideTxt = "Copilot sidebar off" }
-    $userHow = "Edge Settings > Sidebar > turn off Copilot. Then Settings > System and performance > turn off On-device AI if that switch is listed."
+    $userHow = "Edge Settings > Sidebar > Turn off Copilot. Then Settings > System and performance > Turn off On-device AI if that switch is listed."
     $mid = $(if ($sideTxt) { " | $sideTxt" } else { "" })
 
     if ($policyOff) {
         Set-ScanStatus $r "Deactivated"
-        $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Microsoft Edge > set GenAILocalFoundationalModelSettings to 1 (do not download)."
-        $r.Details += " | AI off | turned off by policy$mid | $modelDetail"
+        $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Microsoft Edge > Set GenAILocalFoundationalModelSettings to 1 (do not download)."
+        $r.Details += " | AI off | Turned off by policy$mid | $modelDetail"
     } elseif ($settingsOn) {
         Set-ScanStatus $r "Activated"
         $r.DisableHint = $userHow
@@ -3327,7 +3345,7 @@ function Scan-Ollama {
         Set-ScanStatus $r "Installed"
     } elseif ($models -or $logs) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app"
+        $r.Details = "Ollama is not installed. A data folder remains."
         Set-ScanStatus $r "Not Installed"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -3359,7 +3377,8 @@ function Scan-LMStudio {
         Set-ScanStatus $r "Installed"
     } elseif ($data) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $data"
+        $r.Details = "LM Studio is not installed. A data folder remains."
+        $r.Path = $data
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
         $r.DisableHint = ""
     } else {
@@ -3388,7 +3407,8 @@ function Scan-Jan {
         Set-ScanStatus $r "Installed"
     } elseif ($data) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $data"
+        $r.Details = "Jan is not installed. A data folder remains."
+        $r.Path = $data
         Set-ScanStatus $r "Not Installed"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -3453,7 +3473,8 @@ function Scan-GPT4All {
         Set-ScanStatus $r "Installed"
     } elseif ($data) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $data"
+        $r.Details = "GPT4All is not installed. A data folder remains."
+        $r.Path = $data
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
         $r.DisableHint = ""
     } else {
@@ -3508,6 +3529,10 @@ function Scan-Cursor {
     return $r
 }
 
+# Microsoft Windows Details rule:
+# AI on / AI off first only when the row has a real on/off.
+# If the state is not read, use AI on/off not read.
+# If there is no on/off to read, do not add the phrase.
 function Scan-WindowsAIComponents {
     $r = New-Result "Windows On-Device AI"
     # These are system components on Copilot+ and recent Windows 11
@@ -3524,7 +3549,7 @@ function Scan-WindowsAIComponents {
     if ($aiPkgs) {
         $r.Installed = $true
         $names = ($aiPkgs | Select-Object -First 6 -ExpandProperty Name) -join ", "
-        $parts += "App: $names"
+        $parts += "Components: $names"
         $labels = [ordered]@{
             "Phi Silica" = "PhiSilica|AionInstruct"
             "Image Creation" = "ImageCreation|ImageGeneration"
@@ -3571,13 +3596,13 @@ function Scan-WindowsAIComponents {
     if (-not $knownPackage) {
         $r.Installed = $false
         Set-ScanStatus $r "Not Installed"
-        if (-not ($parts | Where-Object { $_ -like "Data folder*" })) { $parts = @("No Windows AI components found. Requires a Copilot+ PC.") }
-        else { $parts = @("Leftover folder; no components") + @($parts | Where-Object { $_ -like "Data folder*" }) }
+        if (-not ($parts | Where-Object { $_ -like "Data folder*" })) { $parts = @("Requires a Copilot+ PC | No Windows AI components found") }
+        else { $parts = @("Requires a Copilot+ PC | Windows AI is not installed. A data folder remains.") + @($parts | Where-Object { $_ -like "Data folder*" }) }
     } elseif (-not $r.Activated -or $r.Activated -eq "Not Installed") {
         Set-ScanStatus $r "Installed"
     }
     $consent = Get-SystemAiConsent
-    $privacyHow = "Windows Settings > Privacy & security > Text and image generation > turn off Windows AI if listed. Removable models: Settings > System > AI components."
+    $privacyHow = "Windows Settings > Privacy & security > Text and image generation > Turn off Windows AI if listed. Removable models: Settings > System > AI components."
     if ($knownPackage -and $consent.Denied) {
         $parts += "Text and image generation off"
         Set-ScanStatus $r "Deactivated"
@@ -3593,7 +3618,7 @@ function Scan-WindowsAIComponents {
         $lead = "AI on/off not read"
         if ($r.Activated -eq "Activated") { $lead = "AI on" }
         elseif ($r.Activated -eq "Deactivated") { $lead = "AI off" }
-        $app = @($parts | Where-Object { $_ -like "App:*" } | Select-Object -First 1)
+        $app = @($parts | Where-Object { $_ -like "Components:*" -or $_ -like "App:*" } | Select-Object -First 1)
         $comp = @($parts | Where-Object { $_ -like "AI components:*" } | Select-Object -First 1)
         $extra = @($parts | Where-Object { $_ -like "Text and image generation*" })
         $parts = @($lead) + $app + $comp + $extra
@@ -3629,8 +3654,9 @@ function Scan-ExperimentalAgenticFeatures {
         try { if ([int]$enabled -eq 1) { $isOn = $true } } catch { $isOn = $false }
         if ($isOn) {
             Set-ScanStatus $r "Activated"
+            $parts += "AI on"
             $parts += "Agent workspace enabled"
-            $r.DisableHint = "Windows Settings > System > AI components > Experimental agentic features > turn it Off."
+            $r.DisableHint = "Windows Settings > System > AI components > Experimental agentic features > Turn it Off."
         } else {
             Set-ScanStatus $r "Deactivated"
             $parts += "AI off"
@@ -3640,10 +3666,10 @@ function Scan-ExperimentalAgenticFeatures {
         # Feature available on recent Windows 11 but off by default when key is absent
         if (Test-WindowsBuildAtLeast 26100) {
             Set-ScanStatus $r "Not Installed"
-            $parts += "Requires a Copilot+ PC. Experimental agentic features may not be available on this PC."
+            $parts += "Requires a Copilot+ PC | Experimental agentic features may not be available on this PC"
         } else {
             Set-ScanStatus $r "Not Installed"
-            $parts += "Not supported in this Windows version. Experimental agentic features are Windows 11 24H2 or later."
+            $parts += "Not supported in this Windows version | Experimental agentic features are Windows 11 24H2 or later"
         }
     }
     $r.Details = ($parts | Where-Object { $_ }) -join " | "
@@ -3675,7 +3701,7 @@ function Scan-SemanticSearch {
         $r.DisableHint = "Exclude folders from indexing in Windows Settings > Privacy & security > Searching Windows. Full off is limited."
     } else {
         Set-ScanStatus $r "Not Installed"
-        $parts += "Semantic Search components not found"
+        $parts += "Requires a Copilot+ PC | Semantic Search components not found"
     }
     $r.Details = ($parts | Where-Object { $_ }) -join " | "
     return $r
@@ -3711,10 +3737,10 @@ function Scan-StudioEffects {
                 $parts += "Global Enabled flag off"
             }
         }
-        $r.DisableHint = "Windows Settings > Bluetooth & devices > Cameras > select your camera > turn off Studio Effects. Or Quick Settings (Win+A)."
+        $r.DisableHint = "Windows Settings > Bluetooth & devices > Cameras > Select your camera > Turn off Studio Effects. Or Quick Settings (Win+A)."
     } else {
         Set-ScanStatus $r "Not Installed"
-        $parts += "No Studio Effects capability detected"
+        $parts += "Requires a Copilot+ PC | No Studio Effects capability detected"
     }
     $r.Details = ($parts | Where-Object { $_ }) -join " | "
     return $r
@@ -3737,7 +3763,7 @@ function Scan-Recall {
 
     if ($pkgs) {
         $pkg = @($pkgs) | Select-Object -First 1
-        $parts += "App: $($pkg.Name)"
+        $parts += "Components: $($pkg.Name)"
         if (-not $r.Version) { $r.Version = $pkg.Version }
     }
     if ($hasUkp) { $parts += "Snapshot folder present" }
@@ -3749,14 +3775,14 @@ function Scan-Recall {
     if (-not $pkgs -and $hasUkp) {
         $r.Installed = $false
         Set-ScanStatus $r "Not Installed"
-        $r.Details = "Leftover folder; no app: $ukp"
+        $r.Details = "Requires a Copilot+ PC | Recall is not installed. A data folder remains."
         $r.DisableHint = ""
         return $r
     }
     if (-not $pkgs) {
         Set-ScanStatus $r "Not Installed"
-        if ($hasUkp) { $r.Details = "Leftover folder; no app: $ukp" }
-        else { $r.Details = "No Recall app or snapshot folder" }
+        if ($hasUkp) { $r.Details = "Requires a Copilot+ PC | Recall is not installed. A data folder remains." }
+        else { $r.Details = "Requires a Copilot+ PC | No Recall components or snapshot folder" }
         return $r
     }
 
@@ -3765,22 +3791,22 @@ function Scan-Recall {
     $userOff = ($null -ne $userOn -and "$userOn" -eq "0")
     $userOnFlag = ($null -ne $userOn -and "$userOn" -eq "1")
 
-    $userHow = "Windows Settings > Privacy & security > Recall & snapshots > turn off Save snapshots."
+    $userHow = "Windows Settings > Privacy & security > Recall & snapshots > Turn off Save snapshots."
     if ($policyBlocks) {
         Set-ScanStatus $r "Deactivated"
-        $parts = @("AI off", "turned off by policy") + @($parts | Where-Object { $_ -like "App:*" -or $_ -like "Snapshot*" })
-        $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows AI > set Allow Recall enablement to Disabled."
+        $parts = @("AI off", "Turned off by policy") + @($parts | Where-Object { $_ -like "Components:*" -or $_ -like "App:*" -or $_ -like "Snapshot*" })
+        $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows AI > Set Allow Recall enablement to Disabled."
     } elseif ($userOff) {
         Set-ScanStatus $r "Deactivated"
-        $parts = @("AI off") + @($parts | Where-Object { $_ -like "App:*" -or $_ -like "Snapshot*" })
+        $parts = @("AI off") + @($parts | Where-Object { $_ -like "Components:*" -or $_ -like "App:*" -or $_ -like "Snapshot*" })
         $r.DisableHint = $userHow
     } elseif ($userOnFlag) {
         Set-ScanStatus $r "Activated"
-        $parts = @("AI on") + @($parts | Where-Object { $_ -like "App:*" -or $_ -like "Snapshot*" })
+        $parts = @("AI on") + @($parts | Where-Object { $_ -like "Components:*" -or $_ -like "App:*" -or $_ -like "Snapshot*" })
         $r.DisableHint = $userHow
     } else {
         Set-ScanStatus $r "Installed"
-        $parts = @("AI on/off not read") + @($parts | Where-Object { $_ -like "App:*" -or $_ -like "Snapshot*" })
+        $parts = @("AI on/off not read") + @($parts | Where-Object { $_ -like "Components:*" -or $_ -like "App:*" -or $_ -like "Snapshot*" })
         $r.DisableHint = $userHow
     }
     $r.Details = ($parts | Where-Object { $_ }) -join " | "
@@ -3800,10 +3826,10 @@ function Scan-FileExplorerAI {
     if (-not $pkgs) {
         if (Test-WindowsBuildAtLeast 26100) {
             Set-ScanStatus $r "Not Installed"
-            $r.Details = "No AI actions package found. Requires a Copilot+ PC."
+            $r.Details = "Requires a Copilot+ PC | No AI actions package found"
         } else {
             Set-ScanStatus $r "Not Installed"
-            $r.Details = "Not supported in this Windows version. File Explorer + AI is Windows 11 24H2 or later."
+            $r.Details = "Not supported in this Windows version | File Explorer + AI is Windows 11 24H2 or later"
         }
         return $r
     }
@@ -3812,7 +3838,7 @@ function Scan-FileExplorerAI {
     $r.Version = $pkg.Version
     $r.DisableHint = $how
     Set-ScanStatus $r "Installed"
-    $r.Details = "App: $($pkg.Name) | Action toggles not read"
+    $r.Details = "AI on/off not read | Components: $($pkg.Name) | Action toggles not read"
     return $r
 }
 
@@ -3827,25 +3853,25 @@ function Scan-ClickToDo {
         $pkg = @($pkgs) | Select-Object -First 1
         $r.Installed = $true
         $r.Version = $pkg.Version
-        $parts += "App: $($pkg.Name)"
+        $parts += "Components: $($pkg.Name)"
     }
 
     # Click to Do ships with Copilot+ / Recall stacks; treat policy + package.
 
     if (-not $r.Installed) {
         Set-ScanStatus $r "Not Installed"
-        $r.Details = "No Click to Do components found. Requires a Copilot+ PC."
+        $r.Details = "Requires a Copilot+ PC | No Click to Do components found"
         return $r
     }
 
-    $userHow = "Windows Settings > Privacy & security > Click to Do > turn it Off."
+    $userHow = "Windows Settings > Privacy & security > Click to Do > Turn it Off."
     if ($null -ne $disable -and [int]$disable -eq 1) {
         Set-ScanStatus $r "Deactivated"
-        $parts = @("AI off", "turned off by policy") + @($parts | Where-Object { $_ -like "App:*" })
-        $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows AI > turn on Disable Click to Do."
+        $parts = @("AI off", "Turned off by policy") + @($parts | Where-Object { $_ -like "Components:*" -or $_ -like "App:*" })
+        $r.DisableHint = Get-AdminPolicyHint "Group Policy > Computer Configuration > Administrative Templates > Windows Components > Windows AI > Turn on Disable Click to Do."
     } else {
         Set-ScanStatus $r "Installed"
-        $parts = @("AI on/off not read") + @($parts | Where-Object { $_ -like "App:*" })
+        $parts = @("AI on/off not read") + @($parts | Where-Object { $_ -like "Components:*" -or $_ -like "App:*" })
         $r.DisableHint = $userHow
     }
     $r.Details = ($parts | Where-Object { $_ }) -join " | "
@@ -3893,7 +3919,7 @@ function Scan-SettingsAgent {
     $how = Get-SettingsAgentDisableText
     if (-not (Test-WindowsBuildAtLeast 26100)) {
         Set-ScanStatus $r "Not Installed"
-        $r.Details = "Not supported in this Windows version. Settings agent is Windows 11 24H2 or later."
+        $r.Details = "Not supported in this Windows version | Settings agent is Windows 11 24H2 or later"
         return $r
     }
     if ($null -eq $script:AllAppx) {
@@ -3903,7 +3929,7 @@ function Scan-SettingsAgent {
     $aiPkgs = @($script:AllAppx | Where-Object { $_.Name -match $aiNameRe })
     if (-not $aiPkgs) {
         Set-ScanStatus $r "Not Installed"
-        $r.Details = "Requires a Copilot+ PC. No Copilot+ AI components found. Settings agent is not available on this PC."
+        $r.Details = "Requires a Copilot+ PC | Settings agent is not available on this PC"
         return $r
     }
     $off = Get-WindowsAiPolicyDword "DisableSettingsAgent"
@@ -3911,7 +3937,7 @@ function Scan-SettingsAgent {
     $parts = @("Windows 11 24H2 or later", "Copilot+ AI components present")
     if ($null -ne $off -and [int]$off -eq 1) {
         Set-ScanStatus $r "Deactivated"
-        $parts = @("AI off", "turned off by policy", "Components: Windows AI")
+        $parts = @("AI off", "Turned off by policy", "Components: Windows AI")
         $r.DisableHint = "Controlled by your administrator. " + $how
     } else {
         Set-ScanStatus $r "Activated"
@@ -3951,12 +3977,15 @@ function Scan-GitHubCopilot {
 
     if ($found) {
         $r.Installed = $true
-        $r.Details = "App: " + ($parts[0] -replace '^Extension folder: ', '')
-        if ($parts.Count -gt 1) { $r.Details += " | Data folder present" }
+        $bits = @()
+        if ($parts.Count -gt 1) { $bits += "Data folder present" }
+        $bits += "App: " + ($parts[0] -replace '^Extension folder: ', '')
+        $r.Details = $bits -join " | "
         Set-ScanStatus $r "Installed"
     } elseif ($dataOnly) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $env:LOCALAPPDATA\GitHubCopilot"
+        $r.Details = "GitHub Copilot is not installed. A data folder remains."
+        $r.Path = "$env:LOCALAPPDATA\GitHubCopilot"
         Set-ScanStatus $r "Not Installed"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -3989,7 +4018,8 @@ function Scan-ComfyUI {
         Set-ScanStatus $r "Installed"
     } elseif ($found) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $found"
+        $r.Details = "ComfyUI is not installed. A data folder remains."
+        $r.Path = $found
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no launcher"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -4001,7 +4031,7 @@ function Scan-ComfyUI {
 function Scan-OperaAI {
     # Opera: Aria cutoff 100. Settings > Sidebar.
     $r = New-Result "Opera + Aria"
-    $r.DisableHint = "Opera Settings > Sidebar > turn off Aria / Opera AI."
+    $r.DisableHint = "Opera Settings > Sidebar > Turn off Aria / Opera AI."
     $exe = Test-PathAny @(
         "$env:LOCALAPPDATA\Programs\Opera\opera.exe",
         "$env:LOCALAPPDATA\Programs\Opera GX\opera.exe",
@@ -4083,7 +4113,7 @@ function Scan-OperaAI {
     if ($anyOn) {
         Set-ScanStatus $r "Activated" "Aria on in Preferences"
         $r.Details += " | AI on | $modelDetail"
-        if ($anyOff) { $r.Details += " | on in at least one profile" }
+        if ($anyOff) { $r.Details += " | On in at least one profile" }
     } elseif ($anyOff) {
         Set-ScanStatus $r "Deactivated" "Aria off in Preferences"
         $r.Details += " | AI off | $modelDetail"
@@ -4099,7 +4129,7 @@ function Scan-OperaAI {
 function Scan-BraveLeo {
     # Brave: Leo from 1.52 or Chromium 112. Settings > Leo.
     $r = New-Result "Brave + Leo"
-    $r.DisableHint = "Brave Settings > Leo > turn off Leo AI."
+    $r.DisableHint = "Brave Settings > Leo > Turn off Leo AI."
     $exe = Test-PathAny @(
         "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\Application\brave.exe",
         "${env:ProgramFiles}\BraveSoftware\Brave-Browser\Application\brave.exe",
@@ -4180,7 +4210,7 @@ function Scan-BraveLeo {
     if ($anyOn) {
         Set-ScanStatus $r "Activated" "Leo on in Preferences"
         $r.Details += " | AI on | $modelDetail"
-        if ($anyOff) { $r.Details += " | on in at least one profile" }
+        if ($anyOff) { $r.Details += " | On in at least one profile" }
     } elseif ($anyOff) {
         Set-ScanStatus $r "Deactivated" "Leo off in Preferences"
         $r.Details += " | AI off | $modelDetail"
@@ -4196,7 +4226,7 @@ function Scan-BraveLeo {
 function Scan-Comet {
     # Comet: AI-native browser. Treat install as the product.
     $r = New-Result "Perplexity Comet + AI"
-    $r.DisableHint = "Comet Settings > turn off AI features (or uninstall Comet from Windows Settings > Apps)."
+    $r.DisableHint = "Comet Settings > Turn off AI features (or uninstall Comet from Windows Settings > Apps)."
     $exe = Test-PathAny @(
         "$env:LOCALAPPDATA\Perplexity\Comet\Application\comet.exe",
         "$env:LOCALAPPDATA\Programs\Comet\comet.exe",
@@ -4210,7 +4240,8 @@ function Scan-Comet {
         Set-ScanStatus $r "Unknown" "AI setting unknown"
     } elseif (Test-Path "$env:LOCALAPPDATA\Perplexity\Comet") {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no browser: $env:LOCALAPPDATA\Perplexity\Comet"
+        $r.Details = "Comet is not installed. A data folder remains."
+        $r.Path = "$env:LOCALAPPDATA\Perplexity\Comet"
         Set-ScanStatus $r "Not Installed" "Leftover data folder"
         $r.DisableHint = ""
         Move-BrowserPathLast $r
@@ -4246,7 +4277,7 @@ function Scan-Comet {
     if ($anyOn) {
         Set-ScanStatus $r "Activated" "AI setting on in Comet preferences"
         $r.Details += " | AI on | $modelDetail"
-        if ($anyOff) { $r.Details += " | on in at least one profile" }
+        if ($anyOff) { $r.Details += " | On in at least one profile" }
     } elseif ($anyOff) {
         Set-ScanStatus $r "Deactivated" "AI setting off in Comet preferences"
         $r.Details += " | AI off | $modelDetail"
@@ -4293,7 +4324,7 @@ function Scan-Firefox {
     # Empty prefs: 148-157 Activated (AI Controls default is not blocked).
     # 130-147 empty prefs follow that version Default on the map (off).
     $r = New-Result "Mozilla Firefox + AI"
-    $r.DisableHint = "Firefox Settings > AI Controls > turn on Block AI enhancements."
+    $r.DisableHint = "Firefox Settings > AI Controls > Turn on Block AI enhancements."
     $exe = Test-PathAny @(
         "${env:ProgramFiles}\Mozilla Firefox\firefox.exe",
         "${env:ProgramFiles(x86)}\Mozilla Firefox\firefox.exe",
@@ -4308,7 +4339,8 @@ function Scan-Firefox {
         Set-ScanStatus $r "Not Installed"
         $r.DisableHint = ""
         if (Test-Path $profilesRoot) {
-            $r.Details = "Leftover folder; no browser: $profilesRoot"
+            $r.Details = "Firefox is not installed. A data folder remains."
+            $r.Path = $profilesRoot
         } else {
             $r.Details = "No Firefox browser found"
         }
@@ -4340,19 +4372,19 @@ function Scan-Firefox {
     $ffHasAiControls = ($ffMajor -ge 148)
 
     if ($ffMajor -ge 148) {
-        $r.DisableHint = "Firefox Settings > AI Controls > turn on Block AI enhancements."
+        $r.DisableHint = "Firefox Settings > AI Controls > Turn on Block AI enhancements."
     } elseif ($ffMajor -eq 147) {
-        $r.DisableHint = "Firefox Settings > General > Browsing > turn off Enable link previews. Settings > General > Tabs > Interaction > turn off Use AI to suggest tabs and a name for tab groups."
+        $r.DisableHint = "Firefox Settings > General > Browsing > Turn off Enable link previews. Settings > General > Tabs > Interaction > Turn off Use AI to suggest tabs and a name for tab groups."
     } elseif ($ffMajor -ge 143) {
-        $r.DisableHint = "Firefox Settings > General > Browsing > turn off Enable link previews. Settings > General > Tabs > turn off Use AI to suggest tabs and a name for tab groups."
+        $r.DisableHint = "Firefox Settings > General > Browsing > Turn off Enable link previews. Settings > General > Tabs > Turn off Use AI to suggest tabs and a name for tab groups."
     } elseif ($ffMajor -eq 142) {
-        $r.DisableHint = "Firefox Settings > General > Browsing > turn off Enable link previews and Allow AI to read the page for key points."
+        $r.DisableHint = "Firefox Settings > General > Browsing > Turn off Enable link previews and Allow AI to read the page for key points."
     } elseif ($ffMajor -eq 141) {
         $r.DisableHint = "Firefox 141 has no Settings page for link previews. Official help starts at 142 (Settings > General > Browsing)."
     } elseif ($ffMajor -ge 136) {
         $r.DisableHint = "Firefox 136: Settings > General > Browser Layout may list an AI chatbot in the sidebar. Labs AI chatbot is documented for 130-135. Update to 148+ for Settings > AI Controls."
     } elseif ($ffMajor -ge 130) {
-        $r.DisableHint = "Firefox Settings > Firefox Labs > turn off AI chatbot."
+        $r.DisableHint = "Firefox Settings > Firefox Labs > Turn off AI chatbot."
     } else {
         $r.DisableHint = ""
     }
@@ -4411,7 +4443,6 @@ function Scan-Firefox {
     } catch {}
 
     if ($ffMajor -gt 0) {
-        $r.Details += " | Firefox $ffMajor"
         if (-not $ffHasAiBundle) {
             $r.DisableHint = ""
             Set-ScanStatus $r "No AI Features" "Firefox $ffMajor present; no bundled generative AI"
@@ -4559,7 +4590,7 @@ function Scan-Firefox {
     if ($uncoveredOn.Count -gt 0) {
         $r.Details += " | Block/AI Controls does not cover: " + ($uncoveredOn -join ", ")
     }
-    if ($extMl) { $r.Details += " | extensions.ml.enabled=true (Details only)" }
+    if ($extMl) { $r.Details += " | Extension ML enabled" }
 
     $blockExcludedOn = @()
     if ($enabledFlags -contains "browser.ml.pageAssist.enabled") { $blockExcludedOn += "pageAssist" }
@@ -4569,36 +4600,36 @@ function Scan-Firefox {
     if ($masterBlocked -and $enabledFlags.Count -eq 0) {
         Set-ScanStatus $r "Deactivated" "AI blocked in Firefox Settings"
         $parts = @()
-        if ($blockedControls.Count -gt 0) { $parts += "blocked: $($blockedControls.Count) controls" }
-        if ($disabledFlags.Count -gt 0) { $parts += "off: $($disabledFlags.Count) ml prefs" }
-        $r.Details += " | " + ($parts -join "; ")
+        if ($blockedControls.Count -gt 0) { $parts += "$($blockedControls.Count) AI controls blocked" }
+        if ($disabledFlags.Count -gt 0) { $parts += "$($disabledFlags.Count) AI preferences off" }
+        $r.Details += " | AI off | " + ($parts -join " | ")
     } elseif ($chatOff -and $sidebarBlocked -and -not $providerSet) {
         Set-ScanStatus $r "Deactivated" "Chatbot off in prefs"
-        $r.Details += " | browser.ml.chat.enabled=false"
+        $r.Details += " | AI off | Chatbot off"
     } elseif ($masterBlocked -and $blockExcludedOn.Count -gt 0 -and -not $providerSet) {
         Set-ScanStatus $r "Activated" "Block AI on; uncovered features still on"
-        $r.Details += " | Block AI on but still on: " + ($blockExcludedOn -join ", ")
+        $r.Details += " | AI on | Block AI on but still on: " + ($blockExcludedOn -join ", ")
     } elseif ($enabledFlags.Count -gt 0 -or $providerSet) {
         Set-ScanStatus $r "Activated" "AI features enabled in prefs"
         $sample = ($enabledFlags | Select-Object -First 4) -join ", "
-        $r.Details += " | Enabled: $sample"
-        if ($providerSet) { $r.Details += " | chatbot provider set" }
+        $r.Details += " | AI on | Enabled: $sample"
+        if ($providerSet) { $r.Details += " | Chatbot provider set" }
         if ($blockedControls.Count -gt 0) {
-            $r.Details += " | Some controls blocked: $($blockedControls.Count)"
+            $r.Details += " | $($blockedControls.Count) AI controls blocked"
         }
     } elseif ($disabledFlags.Count -gt 0 -or $blockedControls.Count -gt 0) {
         Set-ScanStatus $r "Deactivated" "AI prefs set off/blocked"
-        $r.Details += " | disabled=$($disabledFlags.Count); blocked=$($blockedControls.Count)"
+        $r.Details += " | AI off | AI preferences off: $($disabledFlags.Count) | AI controls blocked: $($blockedControls.Count)"
     } elseif ($profileChecked) {
         if ($ffMajor -gt $ffAiSheetMajor) {
-            Set-ScanStatus $r "Unknown" "Firefox $ffMajor not in the AI sheet; defaults not confirmed"
-            $r.Details += " | Firefox $ffMajor not in the AI sheet; defaults not confirmed"
+            Set-ScanStatus $r "Unknown" "Defaults for this Firefox version are not confirmed"
+            $r.Details += " | AI on/off not read | Defaults for this Firefox version are not confirmed"
         } elseif ($ffHasAiControls) {
             Set-ScanStatus $r "Activated" "No pref overrides; AI Controls default is not blocked"
-            $r.Details += " | No pref overrides; AI Controls default is default (not blocked)"
+            $r.Details += " | AI on | No pref overrides | AI Controls default is not blocked"
         } elseif ($ffMajor -ge 130) {
             Set-ScanStatus $r "Deactivated" "Optional AI off (no pref overrides)"
-            $r.Details += " | No browser.ml overrides in prefs. This version Default on the map is off"
+            $r.Details += " | AI off | No preference overrides | Default is off"
         } else {
             $r.DisableHint = ""
             Set-ScanStatus $r "No AI Features" "No bundled generative AI"
@@ -4641,10 +4672,6 @@ function Scan-Firefox {
                   ($blockedControls -contains "browser.ai.control.linkPreviewKeyPoints")
     $pageAssistOn = ($enabledFlags -contains "browser.ml.pageAssist.enabled")
     $smartAssistOn = ($enabledFlags -contains "browser.ml.smartAssist.enabled")
-    $mlCoreOn = ($enabledFlags -contains "browser.ml.enable")
-    $extMlOn = ($enabledFlags -contains "extensions.ml.enabled")
-    $smartMasterOn = ($enabledFlags -contains "browser.tabs.groups.smart.enabled")
-    $smartUserOn = ($enabledFlags -contains "browser.tabs.groups.smart.userEnabled")
     if ($labsOn) { $labsFact = "on" }
     elseif ($labsOff) { $labsFact = "off" }
     if ($tabsOn) { $tabsFact = "on" }
@@ -4653,7 +4680,6 @@ function Scan-Firefox {
     elseif ($previewOff) { $previewFact = "off" }
 
     $optinOn = ($enabledFlags -contains "browser.ml.linkPreview.optin")
-    $optinOff = ($disabledFlags -contains "browser.ml.linkPreview.optin")
     $ffOn = @()
     if ($labsOn) { $ffOn += "chatbot" }
     if ($tabsOn) { $ffOn += "tab groups" }
@@ -4673,26 +4699,26 @@ function Scan-Firefox {
     $disableParts = @()
     if ($labsOn -or ($labsFact -eq "unknown" -and $r.Installed -and $r.Activated -ne "No AI Features")) {
         if ($ffMajor -ge 148) {
-            $disableParts += "Firefox Settings > AI Controls > turn on Block AI enhancements (Labs chatbot)"
+            $disableParts += "Firefox Settings > AI Controls > Turn on Block AI enhancements (Labs chatbot)"
         } elseif ($ffMajor -ge 136) {
-            $disableParts += "Firefox Settings > General > Browser Layout or the sidebar > turn off AI chatbot if listed. Labs AI chatbot is documented for 130-135"
+            $disableParts += "Firefox Settings > General > Browser Layout or the sidebar > Turn off AI chatbot if listed. Labs AI chatbot is documented for 130-135"
         } elseif ($ffMajor -ge 130) {
-            $disableParts += "Firefox Settings > Firefox Labs > turn off AI chatbot"
+            $disableParts += "Firefox Settings > Firefox Labs > Turn off AI chatbot"
         }
     }
     if ($tabsOn) {
         if ($ffMajor -ge 147) {
-            $disableParts += "Firefox Settings > General > Tabs > Interaction > turn off Use AI to suggest tabs and a name for tab groups"
+            $disableParts += "Firefox Settings > General > Tabs > Interaction > Turn off Use AI to suggest tabs and a name for tab groups"
         } elseif ($ffMajor -ge 143) {
-            $disableParts += "Firefox Settings > General > Tabs > turn off Use AI to suggest tabs and a name for tab groups"
+            $disableParts += "Firefox Settings > General > Tabs > Turn off Use AI to suggest tabs and a name for tab groups"
         }
     }
     if ($previewOn -or ($enabledFlags -contains "browser.ml.linkPreview.optin")) {
         if ($ffMajor -ge 142) {
-            $disableParts += "Firefox Settings > General > Browsing > turn off Enable link previews and Allow AI to generate key points"
+            $disableParts += "Firefox Settings > General > Browsing > Turn off Enable link previews and Allow AI to generate key points"
         }
     } elseif ($previewFact -eq "unknown" -and $ffMajor -ge 142 -and $ffMajor -le 147 -and $r.Installed) {
-        $disableParts += "Firefox Settings > General > Browsing > turn off Enable link previews"
+        $disableParts += "Firefox Settings > General > Browsing > Turn off Enable link previews"
     }
     if ($disableParts.Count -gt 0) {
         $r.DisableHint = ($disableParts -join ". ") + "."
@@ -4726,7 +4752,8 @@ function Scan-GrokNote {
         Set-ScanStatus $r "Installed"
     } elseif ($data) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $data"
+        $r.Details = "Grok is not installed. A data folder remains."
+        $r.Path = $data
         Set-ScanStatus $r "Not Installed"
     } else {
         $r.Installed = $false
@@ -4755,7 +4782,8 @@ function Scan-Windsurf {
         Set-ScanStatus $r "Installed"
     } elseif ($data) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $data"
+        $r.Details = "Windsurf is not installed. A data folder remains."
+      $r.Path = $data
         Set-ScanStatus $r "Not Installed"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -4865,12 +4893,12 @@ function Initialize-ModelNameIndex {
     $indexStarted = Get-Date
     $indexFiles = 0
     $indexMaxFiles = 20000
-    $indexMaxSec = 8
+    $indexMaxSec = 6
     # Time and file caps are checked between folders and every 200 files.
     # One extra folder can still be listed after the cap, then the walk stops.
     # Each folder lists at most 500 children so one huge cache cannot stall.
     $script:ModelIndexIncomplete = $false
-    $indexMaxKids = 500
+    $indexMaxKids = 300
     foreach ($root in @(Get-DedupedModelRoots)) {
         if (Test-ScanCanceled) { break }
         if (((Get-Date) - $indexStarted).TotalSeconds -ge $indexMaxSec) { break }
@@ -5510,11 +5538,13 @@ function Scan-FoundryLocal {
     if ($exe -and ([string]$exe).Contains("*")) { $exe = $null }
     if ($exe) {
         $r.Installed = $true
-        $r.Details = "App: $exe"
         $fileVer = Get-FileVersionSafe $exe
         if ($regVer) { $r.Version = $regVer }
         elseif ($fileVer) { $r.Version = $fileVer }
-        if ($data) { $r.Details += " | Data folder present" }
+        $bits = @()
+        if ($data) { $bits += "Data folder present" }
+        $bits += "App: $exe"
+        $r.Details = $bits -join " | "
         Set-ScanStatus $r "Installed"
     } elseif ($uninst) {
         $r.Installed = $true
@@ -5523,7 +5553,8 @@ function Scan-FoundryLocal {
         Set-ScanStatus $r "Installed"
     } elseif ($data) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $data"
+        $r.Details = "Foundry Local is not installed. A data folder remains."
+  $r.Path = $data
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe or Apps entry"
         $r.DisableHint = ""
     } else {
@@ -5597,7 +5628,8 @@ function Scan-LlamaCpp {
         Set-ScanStatus $r "Installed"
     } elseif ($folder) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $folder"
+        $r.Details = "llama.cpp is not installed. A data folder remains."
+        $r.Path = $folder
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -5690,7 +5722,8 @@ function Scan-Vllm {
     } elseif ($leftover) {
         $r.Installed = $false
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no package"
-        $r.Details = "Leftover folder; no app: $leftover"
+        $r.Details = "vLLM is not installed. A data folder remains."
+  $r.Path = $leftover
     } else {
         Set-ScanStatus $r "Not Installed"
         $r.Details = "No vLLM app found"
@@ -5733,7 +5766,8 @@ function Scan-LocalAI {
         Set-ScanStatus $r "Installed"
     } elseif ($data) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $data"
+        $r.Details = "LocalAI is not installed. A data folder remains."
+$r.Path = $data
         Set-ScanStatus $r "Not Installed"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -5794,7 +5828,8 @@ function Scan-Msty {
         Set-ScanStatus $r "Installed"
     } elseif ($data) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $data"
+        $r.Details = "Msty is not installed. A data folder remains."
+        $r.Path = $data
         Set-ScanStatus $r "Not Installed"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -5871,7 +5906,8 @@ function Scan-OpenWebUI {
     } elseif ($folder -or (Test-Path $dot)) {
         $r.Installed = $false
         $where = $(if ($folder) { $folder } else { $dot })
-        $r.Details = "Leftover folder; no app: $where"
+        $r.Details = "Open WebUI is not installed. A data folder remains."
+      $r.Path = $where
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no launcher"
         $r.DisableHint = ""
     } else {
@@ -5902,7 +5938,8 @@ function Scan-AnythingLLM {
         Set-ScanStatus $r "Installed"
     } elseif ($data) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $data"
+        $r.Details = "AnythingLLM is not installed. A data folder remains."
+        $r.Path = $data
         Set-ScanStatus $r "Not Installed"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -5934,7 +5971,8 @@ function Scan-TextGenWebUI {
         Set-ScanStatus $r "Installed" "Install folder present"
     } elseif ($found) {
         $r.Installed = $false
-        $r.Details = "Leftover folder; no app: $found"
+        $r.Details = "text-generation-webui is not installed. A data folder remains."
+        $r.Path = $found
         Set-ScanStatus $r "Not Installed" "Leftover data folder; no exe"
     } else {
         Set-ScanStatus $r "Not Installed"
@@ -5970,10 +6008,12 @@ function Scan-LocalModels {
         $labelTxt = ""
         $labels = @(Get-CommunityNameLabels $orderedLeft)
         if ($labels.Count -gt 0) { $labelTxt = " | Labels: " + ($labels -join ", ") }
-        $r.Details = "Leftover model files: $leftCount | Sample: $sample$labelTxt | Folders: " + (($foundPaths | Select-Object -First 4) -join "; ")
+        $r.Details = "Leftover model files: $leftCount | Sample: $sample$labelTxt"
+        $r.Path = ($foundPaths | Select-Object -First 4) -join " | "
     } elseif ($roots.Count -gt 0) {
         Set-ScanStatus $r "None Found on Disk" "Storage folders present; no leftover model files"
-        $r.Details = "Leftover model files: 0 | Folders: " + (($roots | Select-Object -First 4) -join "; ")
+        $r.Details = "Leftover model files: 0"
+        $r.Path = ($roots | Select-Object -First 4) -join " | "
     } else {
         $r.Details = "No model folders or leftover model files found in standard locations"
     }
@@ -7443,6 +7483,7 @@ function Invoke-ScanFn {
     param($fn)
     $script:LastScanStepError = $null
     if (-not $fn) { return $null }
+    if (Test-ScanCanceled) { return $null }
     trap {
         Write-ErrorLog "Scan step failed" -ErrorRecord $_
         $script:LastScanStepError = $_
@@ -7890,6 +7931,7 @@ function Start-AiScanSession {
     }
     Update-DetectedButtonStyle
     Write-Log "SCAN: started by user"
+    $script:RegCache = @{}
     $groups = @(Get-ScanWorkGroups)
     $total = 0
     foreach ($g in $groups) { $total += @($g.Fns).Count }

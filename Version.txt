@@ -4,6 +4,51 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
+1.7.8  (2026-10-12)
+==============================================================================
+Build: 0198
+
+Changed
+- Microsoft Windows Details put Requires a Copilot+ PC first
+  when the feature is not found. Click to Do, File Explorer
+  + AI, Agent in Settings, Experimental Agentic Features,
+  Semantic Search, Windows Studio Effects, Recall, and
+  Windows On-Device AI use the same order.
+- Present rows say Components, not App. Leftover folders say
+  no components.
+- Browser Details put AI on or AI off first. Model folder
+  notes are capitalized. Turned off by policy is capitalized.
+- Firefox Details put AI on or AI off first and use the same
+  separator as other browsers. The version number is not
+  repeated in Details. The Version column shows it.
+- Leftover folder notes no longer include the path. The path
+  is in the Path column. Details say Leftover folder; no app
+  or Leftover folder; no browser.
+- Notepad and Paint put AI on or AI off first when the
+  state is known.
+- Other Local Models folder paths are in the Path column.
+  Details show the file count and sample names.
+- How to disable capitalizes the first word after each >.
+  Firefox dynamic hints and the Get-HowToDisable fallback
+  follow the same rule. A code comment records the rule.
+- Leftover Details use plain language. Apps say the name is
+  not installed and a data folder remains. Copilot says a
+  registry key or protocol remains. Browsers and Windows
+  features use the same form.
+  Firefox dynamic hints and the Get-HowToDisable fallback
+  follow the same rule. A code comment records the rule.
+- Firefox Details say AI preferences off and AI controls blocked.
+- Copilot Path is empty when no Copilot app is found. A leftover
+  note is in Details.
+- Model walk stops sooner. Local HTTP checks time out faster.
+- Notepad Details say Writing tools, not AI writing tools.
+- Microsoft Apps put App: at the end of Details.
+- Agent in Settings says Settings agent is not available on this PC
+  when no Copilot+ components are found.
+- Paint Details no longer show the registry value for Text and
+  image generation.
+
+==============================================================================
 1.7.7  (2026-10-10)
 ==============================================================================
 Build: 0190
@@ -33,7 +78,6 @@ Changed
   not app. They are Windows features, not apps.
 - The log shows Windows 11 when the build is 22000 or
   higher. The registry name can still say Windows 10.
-
 
 ==============================================================================
 1.7.6  (2026-10-10)
@@ -99,7 +143,6 @@ Changed
   is Ling 3 / 3.1 (Ant).
 - The Settings agent check no longer stops the scan.
 - Copilot policy off says Controlled by your administrator.
-
 
 ==============================================================================
 1.7.4  (2026-10-01)
@@ -434,6 +477,7 @@ Removed
 ==============================================================================
 1.6.9  (2026-09-26)
 ==============================================================================
+
 Changed
 - Chrome and Edge also search Beta, Dev, and Canary. The newest
   channel version sets the AI cutoff.
@@ -497,6 +541,7 @@ Changed
 ==============================================================================
 1.6.8  (2026-09-26)
 ==============================================================================
+
 Added
 - If Log.txt is missing, create it with the standard header.
 - Dolphin (Cognitive Comp.) local model row. Same
@@ -548,6 +593,7 @@ Changed
 ==============================================================================
 1.6.7  (2026-09-26)
 ==============================================================================
+
 Changed
 - Detected and Export stay hidden until the scan finishes.
 - Windows 10/11: percent on the bar, Checking apps..., Checking
@@ -588,6 +634,7 @@ Fixed
 ==============================================================================
 1.6.6  (2026-09-26)
 ==============================================================================
+
 Changed
 - First list group title is Major Apps.
 - Microsoft 365 Copilot with Word installed and no Copilot app
@@ -670,6 +717,7 @@ Fixed
 ==============================================================================
 1.6.5  (2026-09-25)
 ==============================================================================
+
 Changed
 - Check for update puts the Windows connection setting back
   after the GitHub call.
@@ -715,6 +763,7 @@ Fixed
 ==============================================================================
 1.6.4  (2026-09-25)
 ==============================================================================
+
 Added
 - Right-click a row and choose Copy row. Clipboard is Name,
   Installed, Running, Status, Version, and Details. Nothing is
@@ -737,6 +786,7 @@ Changed
 ==============================================================================
 1.6.3  (2026-09-25)
 ==============================================================================
+
 Changed
 - A data folder alone is never Installed. Need an exe, launcher, or
   Apps entry.
@@ -766,6 +816,7 @@ Changed
 ==============================================================================
 1.6.2  (2026-09-23)
 ==============================================================================
+
 Added
 - NVIDIA ChatRTX row (exe or Apps entry). A leftover NVIDIA RAG
   folder is not Installed.
@@ -793,6 +844,7 @@ Changed
 ==============================================================================
 1.6.1  (2026-09-22)
 ==============================================================================
+
 Added
 - How to disable stays blank when Status is Deactivated, unless
   leftover model files remain. Then it says Already off and
@@ -815,6 +867,7 @@ Changed
 ==============================================================================
 1.6.0  (2026-09-20)
 ==============================================================================
+
 Added
 - Check for update button on the title row.
 
@@ -857,6 +910,7 @@ Fixed
 ==============================================================================
 1.5.9  (2026-09-20)
 ==============================================================================
+
 Added
 - Firefox leftover profile folder is named in Details when
   firefox.exe is gone. Status stays Not Installed.
@@ -896,6 +950,7 @@ Changed
 ==============================================================================
 1.5.8  (2026-09-20)
 ==============================================================================
+
 Added
 - Status Unknown (Green) when a browser has AI but the on/off
   setting cannot be read (Firefox, Opera Aria, Brave Leo).
@@ -911,6 +966,7 @@ Changed
 ==============================================================================
 1.5.7  (2026-09-20)
 ==============================================================================
+
 Changed
 - One process list at scan start. Running checks reuse that list.
 - Windows app list is loaded once per scan.
@@ -923,6 +979,7 @@ Removed
 ==============================================================================
 1.5.6  (2026-09-20)
 ==============================================================================
+
 Added
 - Official Gemini desktop detection via Google Update ID
   {533DD80C-942A-4464-B6A9-2E59428D784E} and
@@ -951,6 +1008,7 @@ Fixed
 ==============================================================================
 1.5.5  (2026-09-20)
 ==============================================================================
+
 Added
 - Status App running when a desktop app is open and no local
   model is loaded.
@@ -966,6 +1024,7 @@ Changed
 ==============================================================================
 1.5.4  (2026-09-19)
 ==============================================================================
+
 Added
 - Google Gemini desktop app for Windows (separate from Chrome
   on-device Gemini).
@@ -980,6 +1039,7 @@ Changed
 ==============================================================================
 1.5.3  (2026-09-19)
 ==============================================================================
+
 Added
 - Firefox 130-132 Labs AI chatbot via the Labs chat setting.
 - Firefox 148+ treats AI Controls available/enabled and a set
@@ -996,6 +1056,7 @@ Changed
 ==============================================================================
 1.5.2  (2026-09-15)
 ==============================================================================
+
 Added
 - Only one copy can run. A second launch asks you to close the
   open window first.
@@ -1021,6 +1082,7 @@ Changed
 ==============================================================================
 1.5.1  (2026-09-15)
 ==============================================================================
+
 Added
 - AI_Scanner_Legacy.ps1 for Windows 7. Local apps, model files,
   running processes, and Apps-list checks only.
@@ -1034,6 +1096,7 @@ Changed
 ==============================================================================
 1.5.0  (2026-09-15)
 ==============================================================================
+
 Added
 - Export list button saves visible rows as CSV.
 - Detected button hides gray rows.
@@ -1067,6 +1130,7 @@ Fixed
 ==============================================================================
 1.4.2  (2026-09-14)
 ==============================================================================
+
 Changed
 - Standalone AI products no longer use Installed, optional AI off.
 - Microsoft Copilot is Installed when the app is present. Policy
@@ -1075,6 +1139,7 @@ Changed
 ==============================================================================
 1.4.1  (2026-09-14)
 ==============================================================================
+
 Added
 - Granite 3 / 4 (IBM) model-file row.
 
@@ -1086,6 +1151,7 @@ Changed
 ==============================================================================
 1.4.0  (2026-09-03)
 ==============================================================================
+
 Changed
 - Microsoft 365 Copilot is installed only if that Copilot app is
   present. Office by itself is not enough.
@@ -1097,6 +1163,7 @@ Changed
 ==============================================================================
 1.3.9  (2026-09-03)
 ==============================================================================
+
 Changed
 - Log.txt uses FOUND (AI off) when the AI ships with the app or
   browser but is turned off.
@@ -1104,6 +1171,7 @@ Changed
 ==============================================================================
 1.3.8  (2026-09-03)
 ==============================================================================
+
 Changed
 - Installed (Green) count matches green rows, not every
   Installed = Yes.
@@ -1112,12 +1180,14 @@ Changed
 ==============================================================================
 1.3.7  (2026-09-03)
 ==============================================================================
+
 Removed
 - Details box at the bottom of the window.
 
 ==============================================================================
 1.3.6  (2026-09-03)
 ==============================================================================
+
 Changed
 - Other Apps header capitalization.
 - Details text no longer uses AI/Sidebar style slashes.
@@ -1125,6 +1195,7 @@ Changed
 ==============================================================================
 1.3.5  (2026-09-03)
 ==============================================================================
+
 Changed
 - Remaining section headers are title case: Browser-based,
   Microsoft Apps, Other apps.
@@ -1135,24 +1206,28 @@ Removed
 ==============================================================================
 1.3.4  (2026-09-03)
 ==============================================================================
+
 Removed
 - Major brands header.
 
 ==============================================================================
 1.3.3  (2026-09-03)
 ==============================================================================
+
 Added
 - List sections: Browser-based, Microsoft Apps, Other apps.
 
 ==============================================================================
 1.1.6  (2026-08-31)
 ==============================================================================
+
 Changed
 - AI Name and How to disable columns size to the longest text.
 
 ==============================================================================
 1.1.5  (2026-08-31)
 ==============================================================================
+
 Added
 - How to disable text for every item. Filled only when Installed
   is Yes.
@@ -1160,6 +1235,7 @@ Added
 ==============================================================================
 1.1.4  (2026-08-31)
 ==============================================================================
+
 Changed
 - One model-name index per scan.
 - Windows app list cached once per scan.
@@ -1169,6 +1245,7 @@ Changed
 ==============================================================================
 1.1.3  (2026-08-31)
 ==============================================================================
+
 Added
 - Extra Qwen, Llama, DeepSeek, Gemma, Phi, GLM, Mistral,
   gpt-oss, Nemotron, Muse, and Kimi family names.
@@ -1176,6 +1253,7 @@ Added
 ==============================================================================
 1.1.2  (2026-08-31)
 ==============================================================================
+
 Added
 - Console window is hidden, not minimized.
 - Main window starts maximized.
@@ -1183,12 +1261,14 @@ Added
 ==============================================================================
 1.1.1  (2026-08-31)
 ==============================================================================
+
 Added
 - Progress bar and Scanning X of Y status text.
 
 ==============================================================================
 1.1.0  (2026-08-31)
 ==============================================================================
+
 Added
 - Version numbering, Version.txt, Windsurf, Ollama tags, extra
   local ports, ChatGPT app/exe detection, Ollama Program Files
@@ -1202,6 +1282,7 @@ Changed
 ==============================================================================
 1.0.1  (2026-08-18)
 ==============================================================================
+
 Added
 - Log entries for each positive finding.
 
@@ -1211,6 +1292,7 @@ Changed
 ==============================================================================
 1.0.0  (2026-08-18)
 ==============================================================================
+
 Added
 - Portable Windows 10/11 scanner with no installer.
 - Windows version in the UI.
