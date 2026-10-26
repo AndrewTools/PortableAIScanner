@@ -7,8 +7,8 @@
 # That is not a missing function closer. Count braces outside strings.
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.7.8"
-$script:AppBuild = "0198"
+$script:AppVersion = "1.7.9"
+$script:AppBuild = "0209"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -1089,14 +1089,16 @@ function Get-HowToDisable {
         "Windows Studio Effects*" { return "Windows Settings > Bluetooth & devices > Cameras > Select your camera > Turn off Studio Effects. Or use Quick Settings (Win+A) > Studio Effects." }
         "GitHub Copilot*" { return "Open VS Code > Extensions > GitHub Copilot > Disable or Uninstall." }
         "ComfyUI*" { return "$apps > ComfyUI if listed > Uninstall. If it is only a folder app, open Start > Right-click the app shortcut > Uninstall." }
-        "Opera*" { return "Open Opera > Settings > Sidebar > Turn off Aria / Opera AI." }
+        "Opera*" { return "Opera Settings > Sidebar > Turn off Opera AI." }
         "Brave*" { return "Open Brave > Settings > Leo > Turn off Leo AI." }
         "Perplexity Comet*" { return "Open Comet > Settings > Turn off AI features. Or $apps > Comet > Uninstall." }
+        "Dia + AI*" { return "Open Dia > Settings > Turn off AI features. Or $apps > Dia > Uninstall." }
         "Mozilla Firefox*" {
             return "Firefox 148+: Settings > AI Controls > Turn on Block AI enhancements. Firefox 147: Settings > General > Browsing > Turn off Enable link previews. Firefox 136-146: Settings > General > Browsing and Settings > General > Browser Layout > Uncheck AI chatbot if listed. Firefox 130-135: Settings > Firefox Labs > Turn off AI chatbot. Settings > General > Tabs is smart tab groups, not Labs."
         }
         "Grok*" { return "$apps > Grok > Uninstall if listed. Otherwise use the website only and sign out." }
         "Windsurf*" { return "$apps > Windsurf > Uninstall." }
+        "Devin*" { return "$apps > Devin Desktop > Uninstall." }
         "llama.cpp*" { return "If llama.cpp appears in $apps, click Uninstall. If you only have a program file, delete that app shortcut from Start by right-click > Uninstall when Windows offers it." }
         "Llamafile*" { return "If Llamafile appears in $apps, click Uninstall. If you only have llamafile.exe or a .llamafile on the Desktop or in Downloads, delete that file." }
         "LocalAI*" { return "If LocalAI appears in $apps, click Uninstall." }
@@ -1125,6 +1127,8 @@ function Get-HowToDisable {
         "MiniCPM*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "Hunyuan*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "Ling *" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
+        
+        "Bielik*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "Ornith*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "MiMo*" { return "Delete the model files shown in Details. If you use Ollama or LM Studio, open that app and remove this model." }
         "Foundry Local*" { return "$apps > Foundry Local > Uninstall. Or Settings > System > AI components if listed." }
@@ -1133,6 +1137,7 @@ function Get-HowToDisable {
 }
 
 # Running = Yes whenever the browser or app process is open.
+# Model names that were in Running (Yes (name)) now go in the Version column.
 # Red only if Running = Yes and Status is Activated or Model loaded.
 
 
@@ -1508,7 +1513,7 @@ function Test-ProductProcessOpen {
         "Open WebUI*" { $patterns = @() }
         default { $patterns = @() }
     }
-    $needPath = ($Name -like "Jan*" -or $Name -like "Claude*" -or $Name -like "Foundry Local*" -or $Name -like "ComfyUI*" -or $Name -like "Cursor*" -or $Name -eq "Copilot (Microsoft)" -or $Name -like "Microsoft 365 Copilot*" -or $Name -like "ChatRTX*" -or $Name -like "ChatGPT*" -or $Name -like "Grok*" -or $Name -like "Ollama*" -or $Name -eq "Perplexity" -or $Name -like "LM Studio*" -or $Name -like "AnythingLLM*" -or $Name -like "Windsurf*" -or $Name -like "Msty*" -or $Name -like "GPT4All*" -or $Name -like "llama.cpp*" -or $Name -like "Llamafile*" -or $Name -like "LocalAI*" -or $Name -like "KoboldCPP*" -or $Name -like "Cherry Studio*")
+    $needPath = ($Name -like "Jan*" -or $Name -like "Claude*" -or $Name -like "Foundry Local*" -or $Name -like "ComfyUI*" -or $Name -like "Cursor*" -or $Name -eq "Copilot (Microsoft)" -or $Name -like "Microsoft 365 Copilot*" -or $Name -like "ChatRTX*" -or $Name -like "ChatGPT*" -or $Name -like "Grok*" -or $Name -like "Ollama*" -or $Name -eq "Perplexity" -or $Name -like "LM Studio*" -or $Name -like "AnythingLLM*" -or $Name -like "Windsurf*" -or $Name -like "Devin*" -or $Name -like "Msty*" -or $Name -like "GPT4All*" -or $Name -like "llama.cpp*" -or $Name -like "Llamafile*" -or $Name -like "LocalAI*" -or $Name -like "KoboldCPP*" -or $Name -like "Cherry Studio*")
     foreach ($pat in $patterns) {
         if (-not $pat) { continue }
         try {
@@ -1597,8 +1602,8 @@ function Test-ProcessPathMatchesProduct {
             if ($pp -match '(?i)LM Studio\.exe$' -or $pp -match '(?i)\\LM[- ]Studio\\') { return $true }
         } elseif ($Name -like "AnythingLLM*") {
             if ($pp -match '(?i)\\AnythingLLM\\' -or $pp -match '(?i)AnythingLLM\.exe$' -or $pp -match '(?i)anythingllm-desktop') { return $true }
-        } elseif ($Name -like "Windsurf*") {
-            if ($pp -match '(?i)\\Windsurf\\Windsurf\.exe$' -or $pp -match '(?i)\\Programs\\Windsurf\\') { return $true }
+        } elseif ($Name -like "Windsurf*" -or $Name -like "Devin*") {
+            if ($pp -match '(?i)\\Windsurf\\Windsurf\.exe$' -or $pp -match '(?i)\\Programs\\Windsurf\\' -or $pp -match '(?i)\\Devin\\Devin\.exe$' -or $pp -match '(?i)\\Programs\\Devin\\') { return $true }
         } elseif ($Name -like "Msty*") {
             if ($pp -match '(?i)\\Msty\\Msty\.exe$' -or $pp -match '(?i)\\Programs\\[Mm]sty\\') { return $true }
         } elseif ($Name -like "Cherry Studio*") {
@@ -1628,6 +1633,7 @@ function Test-BrowserProcessOpen {
         "Brave*" { $procName = "brave" }
         "Opera*" { $procName = "opera" }
         "Perplexity Comet*" { $procName = "comet" }
+        "Dia + AI*" { $procName = "dia" }
         "Notepad*" { $procName = "notepad" }
         "Paint*" { $procName = "mspaint" }
         default { return $false }
@@ -1673,9 +1679,17 @@ function Set-RunningAndStatus {
         $procYes = Test-ProductProcessOpen -Name $Result.Name
     }
     if ($modelYes) {
-        $Result.Running = $ModelRunning
+        $Result.Running = "Yes"
         $Result.Installed = $true
         if ($keepOff -notcontains $st) { $Result.Activated = "Model loaded" }
+        if ($ModelRunning -match 'Yes \((.+)\)') {
+            $loadedNames = $Matches[1]
+            if (-not $Result.Version) {
+                $Result.Version = $loadedNames
+            } elseif ([string]$Result.Version -notmatch [regex]::Escape($loadedNames)) {
+                $Result.Version = "$($Result.Version) | $loadedNames"
+            }
+        }
     } elseif ($procYes) {
         $Result.Running = "Yes"
     } else {
@@ -1696,7 +1710,7 @@ function Test-IsHostOptionalAiRow {
 
 function Test-IsBrowserAiRow {
     param([string]$Name)
-    return ($Name -like "Google Chrome + Gemini*" -or $Name -like "Microsoft Edge*" -or $Name -like "Mozilla Firefox*" -or $Name -like "Brave + Leo*" -or $Name -like "Opera + Aria*" -or $Name -like "Perplexity Comet*")
+    return ($Name -like "Google Chrome + Gemini*" -or $Name -like "Microsoft Edge*" -or $Name -like "Mozilla Firefox*" -or $Name -like "Brave + Leo*" -or $Name -like "Opera + Aria*" -or $Name -like "Perplexity Comet*" -or $Name -like "Dia + AI*")
 }
 
 function Test-IsRunning {
@@ -1719,9 +1733,7 @@ function Test-IsRunning {
 
     function Format-Yes([string[]]$list) {
         if (-not $list -or $list.Count -eq 0) { return "No" }
-        if ($list.Count -eq 1) { return "Yes ($($list[0]))" }
-        if ($list.Count -eq 2) { return "Yes ($($list[0]), $($list[1]))" }
-        return "Yes ($($list.Count) models: $($list[0]), ...)"
+        return "Yes (" + ($list -join ", ") + ")"
     }
 
     switch -Wildcard ($AiName) {
@@ -2665,11 +2677,9 @@ function Scan-GeminiChrome {
         Set-ScanStatus $r "Activated"
         $r.Details += " | AI on | $modelDetail"
     } elseif (-not $localStateRead) {
-        $r.DisableHint = ""
         Set-ScanStatus $r "Unknown"
         $r.Details += " | Could not read settings | $modelDetail"
     } elseif ($prefTruncated -and -not $sawOn -and -not $sawOff) {
-        $r.DisableHint = ""
         Set-ScanStatus $r "Unknown"
         $r.Details += " | Could not read settings | $modelDetail"
     } else {
@@ -3308,11 +3318,9 @@ function Scan-EdgeCopilot {
         $r.Details += " | AI off$mid | $modelDetail"
     } elseif (-not $settingsRead) {
         Set-ScanStatus $r "Unknown"
-        $r.DisableHint = ""
         $r.Details += " | Could not read settings$mid | $modelDetail"
     } elseif ($prefTruncated -and -not $settingsOn -and -not $settingsOff) {
         Set-ScanStatus $r "Unknown"
-        $r.DisableHint = ""
         $r.Details += " | Could not read settings$mid | $modelDetail"
     } else {
         Set-ScanStatus $r "Deactivated"
@@ -4031,7 +4039,7 @@ function Scan-ComfyUI {
 function Scan-OperaAI {
     # Opera: Aria cutoff 100. Settings > Sidebar.
     $r = New-Result "Opera + Aria"
-    $r.DisableHint = "Opera Settings > Sidebar > Turn off Aria / Opera AI."
+    $r.DisableHint = "Opera Settings > Sidebar > Turn off Opera AI."
     $exe = Test-PathAny @(
         "$env:LOCALAPPDATA\Programs\Opera\opera.exe",
         "$env:LOCALAPPDATA\Programs\Opera GX\opera.exe",
@@ -4096,8 +4104,8 @@ function Scan-OperaAI {
             $content = Get-PrefFileText $pref
             if ($null -eq $content) { continue }
             $prefsRead = $true
-            $off = ($content -match '"aria_enabled"\s*:\s*false') -or ($content -match '"enable_aria"\s*:\s*false') -or ($content -match '"opera_aria_enabled"\s*:\s*false')
-            $on  = ($content -match '"aria_enabled"\s*:\s*true') -or ($content -match '"enable_aria"\s*:\s*true') -or ($content -match '"opera_aria_enabled"\s*:\s*true')
+            $off = ($content -match '"aria_enabled"\s*:\s*false') -or ($content -match '"enable_aria"\s*:\s*false') -or ($content -match '"opera_aria_enabled"\s*:\s*false') -or ($content -match '"opera_ai_enabled"\s*:\s*false') -or ($content -match '"ai_enabled"\s*:\s*false')
+            $on  = ($content -match '"aria_enabled"\s*:\s*true') -or ($content -match '"enable_aria"\s*:\s*true') -or ($content -match '"opera_aria_enabled"\s*:\s*true') -or ($content -match '"opera_ai_enabled"\s*:\s*true') -or ($content -match '"ai_enabled"\s*:\s*true')
             if ($on) { $anyOn = $true }
             elseif ($off) { $anyOff = $true }
         } catch {}
@@ -4111,14 +4119,15 @@ function Scan-OperaAI {
     $guide = Get-OptGuideFolderDetail $operaRoots
     $modelDetail = [string]$guide.Detail
     if ($anyOn) {
-        Set-ScanStatus $r "Activated" "Aria on in Preferences"
+        Set-ScanStatus $r "Activated" "Opera AI on in Preferences"
         $r.Details += " | AI on | $modelDetail"
         if ($anyOff) { $r.Details += " | On in at least one profile" }
     } elseif ($anyOff) {
-        Set-ScanStatus $r "Deactivated" "Aria off in Preferences"
+        Set-ScanStatus $r "Deactivated" "Opera AI off in Preferences"
         $r.Details += " | AI off | $modelDetail"
-    } elseif ($prefsRead -and $r.Activated -eq "Unknown") {
-        $r.Details += " | AI on/off key not stored | $modelDetail"
+    } elseif ($prefsRead) {
+        Set-ScanStatus $r "Activated" "Opera AI on (key not stored)"
+        $r.Details += " | AI on | key not stored | $modelDetail"
     } else {
         $r.Details += " | $modelDetail"
     }
@@ -4214,8 +4223,9 @@ function Scan-BraveLeo {
     } elseif ($anyOff) {
         Set-ScanStatus $r "Deactivated" "Leo off in Preferences"
         $r.Details += " | AI off | $modelDetail"
-    } elseif ($prefsRead -and $r.Activated -eq "Unknown") {
-        $r.Details += " | AI on/off key not stored | $modelDetail"
+    } elseif ($prefsRead) {
+        Set-ScanStatus $r "Activated" "Leo on (key not stored)"
+        $r.Details += " | AI on | key not stored | $modelDetail"
     } else {
         $r.Details += " | $modelDetail"
     }
@@ -4282,8 +4292,8 @@ function Scan-Comet {
         Set-ScanStatus $r "Deactivated" "AI setting off in Comet preferences"
         $r.Details += " | AI off | $modelDetail"
     } elseif ($prefsRead) {
-        Set-ScanStatus $r "Unknown" "Preferences read; AI on/off key not stored"
-        $r.Details += " | AI on/off key not stored | $modelDetail"
+        Set-ScanStatus $r "Activated" "AI on (key not stored)"
+        $r.Details += " | AI on | key not stored | $modelDetail"
     } else {
         $r.Details += " | $modelDetail"
     }
@@ -4315,9 +4325,91 @@ function Get-FirefoxExeFromUninstall {
     return $null
 }
 
+
+function Scan-Dia {
+    # Dia: AI-native browser from The Browser Company (Atlassian). Windows v1.0 Oct 2026.
+    $r = New-Result "Dia + AI"
+    $r.DisableHint = "Dia Settings > Turn off AI features (or uninstall Dia from Windows Settings > Apps)."
+    $exe = Test-PathAny @(
+        "$env:LOCALAPPDATA\Programs\Dia\Dia.exe",
+        "$env:LOCALAPPDATA\Dia\Application\dia.exe",
+        "${env:ProgramFiles}\Dia\Dia.exe",
+        "${env:ProgramFiles(x86)}\Dia\Dia.exe"
+    )
+    if ($exe -and ([string]$exe).Contains("*")) { $exe = $null }
+
+    # No exe found: return immediately. Do not touch preferences or model folders.
+    if (-not $exe) {
+        $r.Installed = $false
+        $r.DisableHint = ""
+        $r.Path = ""
+        if (Test-Path "$env:LOCALAPPDATA\Dia" -or Test-Path "$env:LOCALAPPDATA\Programs\Dia") {
+            $r.Details = "Dia is not installed. A data folder remains."
+            $r.Path = "$env:LOCALAPPDATA\Dia"
+            Set-ScanStatus $r "Not Installed" "Leftover data folder"
+        } else {
+            $r.Details = "No Dia browser found"
+            Set-ScanStatus $r "Not Installed"
+        }
+        # Force Details after any helper that might clear it.
+        if (-not [string]$r.Details) { $r.Details = "No Dia browser found" }
+        Move-BrowserPathLast $r
+        if (-not [string]$r.Details) { $r.Details = "No Dia browser found" }
+        return $r
+    }
+
+    # Exe found.
+    $r.Installed = $true
+    $r.Details = "Browser: $exe"
+    $r.Version = Get-FileVersionSafe $exe
+    Set-ScanStatus $r "Unknown" "AI setting unknown"
+
+    $anyOn = $false
+    $anyOff = $false
+    $prefsRead = $false
+    $diaRoots = @(
+        "$env:LOCALAPPDATA\Dia\User Data",
+        "$env:LOCALAPPDATA\Programs\Dia\User Data"
+    )
+    foreach ($pref in @(Get-ChromiumPrefFiles -UserDataRoots $diaRoots)) {
+        if (-not (Test-Path -LiteralPath $pref)) { continue }
+        try {
+            $pr = Get-PrefFileText $pref
+            if ($null -eq $pr) { continue }
+            $prefsRead = $true
+            if ($pr -match '"ai_enabled"\s*:\s*false' -or $pr -match '"assistant_enabled"\s*:\s*false' -or $pr -match '"dia_ai"\s*:\s*false') { $anyOff = $true }
+            if ($pr -match '"ai_enabled"\s*:\s*true' -or $pr -match '"assistant_enabled"\s*:\s*true' -or $pr -match '"dia_ai"\s*:\s*true') { $anyOn = $true }
+        } catch {}
+        $pr = $null
+    }
+    $guide = Get-OptGuideFolderDetail $diaRoots
+    $modelDetail = [string]$guide.Detail
+    if ($anyOn) {
+        Set-ScanStatus $r "Activated" "AI setting on in Dia preferences"
+        $r.Details += " | AI on | $modelDetail"
+    } elseif ($anyOff) {
+        Set-ScanStatus $r "Deactivated" "AI setting off in Dia preferences"
+        $r.Details += " | AI off | $modelDetail"
+        $r.DisableHint = ""
+    } elseif ($prefsRead) {
+        Set-ScanStatus $r "Activated" "AI setting on by default"
+        $r.Details += " | AI on | $modelDetail"
+    } else {
+        Set-ScanStatus $r "Unknown"
+        if ([string]$r.Details -notmatch "Could not read settings") {
+            $r.Details += " | Could not read settings"
+        }
+        if ($modelDetail -and [string]$r.Details -notmatch [regex]::Escape($modelDetail)) {
+            $r.Details += " | $modelDetail"
+        }
+    }
+    Move-BrowserPathLast $r
+    return $r
+}
+
 function Scan-Firefox {
     # Firefox: Labs 130-135, General Browsing 136-147, AI Controls 148+.
-    # Last confirmed AI-default major is $ffAiSheetMajor (Firefox-AI-map.xlsx = 157).
+    # Last confirmed AI-default major is $ffAiSheetMajor (Firefox-AI-map.xlsx = 158).
     # When you add a newer Firefox version to this function AND confirm its
     # Settings path and about:config defaults, set $ffAiSheetMajor to that
     # major. Majors above that value with no pref lines stay Unknown.
@@ -4367,7 +4459,7 @@ function Scan-Firefox {
     $ffMajor = 0
     if ($r.Version -match '^(\d+)') { $ffMajor = [int]$Matches[1] }
     # Bump this when a newer Firefox major is added with confirmed defaults.
-    $ffAiSheetMajor = 157
+    $ffAiSheetMajor = 158
     $ffHasAiBundle = ($ffMajor -ge 130)
     $ffHasAiControls = ($ffMajor -ge 148)
 
@@ -4764,14 +4856,19 @@ function Scan-GrokNote {
 }
 
 function Scan-Windsurf {
-    $r = New-Result "Windsurf"
+    # Windsurf rebranded to Devin Desktop (Cognition, June 2026).
+    $r = New-Result "Windsurf / Devin Desktop"
     $exe = Test-PathAny @(
         "$env:LOCALAPPDATA\Programs\Windsurf\Windsurf.exe",
+        "$env:LOCALAPPDATA\Programs\Devin\Devin.exe",
         "${env:ProgramFiles}\Windsurf\Windsurf.exe",
-        "${env:ProgramFiles(x86)}\Windsurf\Windsurf.exe"
+        "${env:ProgramFiles}\Devin\Devin.exe",
+        "${env:ProgramFiles(x86)}\Windsurf\Windsurf.exe",
+        "${env:ProgramFiles(x86)}\Devin\Devin.exe"
     )
     $data = Test-PathAny @(
         "$env:APPDATA\Windsurf",
+        "$env:APPDATA\Devin",
         "$env:USERPROFILE\.codeium\windsurf"
     )
     if ($exe -and ([string]$exe).Contains("*")) { $exe = $null }
@@ -5238,6 +5335,13 @@ function Scan-Ornith {
     )
 }
 
+
+function Scan-Bielik {
+    New-ModelFamilyResult -DisplayName "Bielik (SpeakLeash)" -ProviderNote "Polish open-weight family (1.5B / 4.5B / 7B / 11B)" -Keywords @(
+        '(?i)bielik'
+    )
+}
+
 function Scan-Phi {
     New-ModelFamilyResult -DisplayName "Phi-4 (Microsoft)" -ProviderNote "Microsoft Phi family (Phi-5 weights not public)" -Keywords @(
         '(?i)phi-?5',
@@ -5635,6 +5739,45 @@ function Scan-LlamaCpp {
         Set-ScanStatus $r "Not Installed"
         $r.Details = "No llama.cpp app found"
     }
+    return $r
+}
+
+function Scan-LlamaWindows {
+    # Llama Windows: ggml-org / Hugging Face tray app for llama.cpp (Oct 2026).
+    # Models go to the shared Hugging Face cache; this row detects the tray app.
+    $r = New-Result "Llama Windows"
+    $r.DisableHint = "Uninstall the app from Windows Settings > Apps."
+
+    $exe = Test-PathAny @(
+        "$env:USERPROFILE\.llama-app\llama.exe",
+        "$env:LOCALAPPDATA\LlamaApp\llama.exe",
+        "$env:LOCALAPPDATA\Programs\LlamaApp\LlamaApp.exe"
+    )
+    $data = Test-PathAny @(
+        "$env:LOCALAPPDATA\LlamaApp",
+        "$env:LOCALAPPDATA\Llama",
+        "$env:USERPROFILE\.llama-app"
+    )
+
+    if ($exe -and ([string]$exe).Contains("*")) { $exe = $null }
+
+    if (-not $exe -and -not $data) {
+        Set-ScanStatus $r "Not Installed"
+        $r.Details = "No Llama Windows app found"
+        $r.DisableHint = ""
+        return $r
+    }
+
+    $r.Installed = $true
+    if ($exe) {
+        $r.Path = $exe
+        $r.Version = Get-FileVersionSafe $exe
+        $r.Details = "AI on | Llama Windows tray app"
+    } else {
+        $r.Path = $data
+        $r.Details = "AI on | Llama Windows data folder"
+    }
+    Set-ScanStatus $r "Installed"
     return $r
 }
 
@@ -6069,7 +6212,7 @@ function Resize-NameAndDisableColumns {
     } catch {}
     if ($maxName -gt 280) { $maxName = 280 }
     if ($maxStatus -gt 180) { $maxStatus = 180 }
-    if ($maxVer -gt 140) { $maxVer = 140 }
+    if ($maxVer -gt 480) { $maxVer = 480 }
     if ($maxDisable -gt 400) { $maxDisable = 400 }
     if ($maxPath -gt 400) { $maxPath = 400 }
     $ListView.Columns[0].Width = $maxName
@@ -6405,10 +6548,10 @@ function Add-ResultToListView {
     if (-not $ListView -or -not $r) { return }
     $item = New-Object System.Windows.Forms.ListViewItem($r.Name)
     $item.SubItems.Add( $(if ($r.Installed) { "Yes" } else { "No" }) ) | Out-Null
-    $item.SubItems.Add( $r.Running ) | Out-Null
-    $item.SubItems.Add( $r.Activated ) | Out-Null
-    $item.SubItems.Add( $r.Version ) | Out-Null
-    $item.SubItems.Add( $r.Details ) | Out-Null
+    $item.SubItems.Add( [string]$r.Running ) | Out-Null
+    $item.SubItems.Add( [string]$r.Activated ) | Out-Null
+    $item.SubItems.Add( [string]$r.Version ) | Out-Null
+    $item.SubItems.Add( [string]$r.Details ) | Out-Null
     $disableText = ""
     if ($r.Installed) {
         $stShow = [string]$r.Activated
@@ -6563,16 +6706,7 @@ public static class PasListViewNative {
 function Add-ListViewItemSafe {
     param($ListView, $Item)
     if (-not $ListView -or -not $Item) { return }
-    if ($script:ScanListHeld) {
-        [void]$ListView.Items.Add($Item)
-        return
-    }
-    try {
-        $ListView.BeginUpdate()
-        [void]$ListView.Items.Add($Item)
-    } finally {
-        try { $ListView.EndUpdate() } catch {}
-    }
+    [void]$ListView.Items.Add($Item)
 }
 
 function Set-ListViewRedraw {
@@ -6583,41 +6717,6 @@ function Set-ListViewRedraw {
         $w = if ($On) { [IntPtr]1 } else { [IntPtr]::Zero }
         [void][PasListViewNative]::SendMessage($ListView.Handle, 0x000B, $w, [IntPtr]::Zero)
     } catch {}
-}
-
-function Start-ScanListHold {
-    $script:ScanListHeld = $true
-    $script:ScanPaintN = 0
-    $script:ScanPaintWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    if (-not (Test-UiAlive) -or -not $lv) { return }
-    try { $lv.BeginUpdate() } catch {}
-    Set-ListViewRedraw -ListView $lv -On $false
-}
-
-function Pulse-ScanListPaint {
-    if (-not $script:ScanListHeld) { return }
-    $script:ScanPaintN = [int]$script:ScanPaintN + 1
-    $ms = 0
-    if ($script:ScanPaintWatch) { $ms = [int]$script:ScanPaintWatch.ElapsedMilliseconds }
-    if ($script:ScanPaintN -lt 5 -and $ms -lt 150) { return }
-    $script:ScanPaintN = 0
-    if ($script:ScanPaintWatch) { $script:ScanPaintWatch.Restart() }
-    if (-not (Test-UiAlive) -or -not $lv) { return }
-    Set-ListViewRedraw -ListView $lv -On $true
-    try { $lv.EndUpdate() } catch {}
-    try { $lv.Update() } catch {}
-    try { $lv.BeginUpdate() } catch {}
-    Set-ListViewRedraw -ListView $lv -On $false
-}
-
-function Stop-ScanListHold {
-    if (-not $script:ScanListHeld) { return }
-    $script:ScanListHeld = $false
-    $script:ScanPaintN = 0
-    if (-not (Test-UiAlive) -or -not $lv) { return }
-    Set-ListViewRedraw -ListView $lv -On $true
-    try { $lv.EndUpdate() } catch {}
-    try { $lv.Invalidate() } catch {}
 }
 
 function New-LvCache {
@@ -7375,6 +7474,7 @@ $lv = New-Object System.Windows.Forms.ListView
 $lv.Location = New-Object System.Drawing.Point(20, 125)
 $lv.Size = New-Object System.Drawing.Size(840, 450)
 $lv.View = "Details"
+Enable-ListViewDoubleBuffer $lv
 $lv.FullRowSelect = $true
 $lv.GridLines = $true
 $lv.ShowItemToolTips = $true
@@ -7501,14 +7601,15 @@ function Get-ScanWorkGroups {
             { Scan-GrokNote }, { Scan-Ollama }, { Scan-Perplexity }
         )},
         @{ Header = "Local Models"; Fns = @(
-            { Scan-DeepSeek }, { Scan-Dolphin }, { Scan-Gemma }, { Scan-GLM }, { Scan-GptJPygmalion },
-            { Scan-GptOss }, { Scan-Granite }, { Scan-Hunyuan }, { Scan-Kimi }, { Scan-Ling },
-            { Scan-Llama }, { Scan-MiMo }, { Scan-MiniCPM }, { Scan-MiniMax }, { Scan-MistralFamily },
-            { Scan-MuseGlimmer }, { Scan-Nemotron }, { Scan-Ornith }, { Scan-Phi }, { Scan-Qwen }, { Scan-LocalModels }
+            { Scan-Bielik }, { Scan-DeepSeek }, { Scan-Dolphin }, { Scan-Gemma }, { Scan-GLM },
+            { Scan-GptJPygmalion }, { Scan-GptOss }, { Scan-Granite }, { Scan-Hunyuan }, { Scan-Kimi },
+            { Scan-Ling }, { Scan-Llama }, { Scan-MiMo }, { Scan-MiniCPM }, { Scan-MiniMax },
+            { Scan-MistralFamily }, { Scan-MuseGlimmer }, { Scan-Nemotron }, { Scan-Ornith }, { Scan-Phi },
+            { Scan-Qwen }, { Scan-LocalModels }
         )},
         @{ Header = "Browser-based"; Fns = @(
-            { Scan-BraveLeo }, { Scan-GeminiChrome }, { Scan-EdgeCopilot }, { Scan-Firefox },
-            { Scan-OperaAI }, { Scan-Comet }
+            { Scan-BraveLeo }, { Scan-Dia }, { Scan-GeminiChrome }, { Scan-EdgeCopilot },
+            { Scan-Firefox }, { Scan-OperaAI }, { Scan-Comet }
         )},
         @{ Header = "Microsoft Apps"; Fns = @(
             { Scan-FoundryLocal }, { Scan-GitHubCopilot }, { Scan-M365Copilot },
@@ -7527,7 +7628,7 @@ function Get-ScanWorkGroups {
         @{ Header = "Other Apps"; Fns = @(
             { Scan-AnythingLLM }, { Scan-ChatRTX }, { Scan-CherryStudio }, { Scan-ClaudeCode },
             { Scan-ComfyUI }, { Scan-Cursor }, { Scan-GAssist }, { Scan-GPT4All }, { Scan-Jan },
-            { Scan-KoboldCpp }, { Scan-LibreChat }, { Scan-LlamaCpp }, { Scan-Llamafile },
+            { Scan-KoboldCpp }, { Scan-LibreChat }, { Scan-LlamaWindows }, { Scan-LlamaCpp }, { Scan-Llamafile },
             { Scan-LMStudio }, { Scan-LocalAI }, { Scan-Msty }, { Scan-OpenWebUI },
             { Scan-TextGenWebUI }, { Scan-Vllm }, { Scan-Windsurf }
         )}
@@ -7538,7 +7639,6 @@ function Complete-AiScan {
     if ($script:ScanTimer) {
         try { $script:ScanTimer.Stop() } catch {}
     }
-    Stop-ScanListHold
     Stop-PasBackground -WaitIfDone
     $results = @($script:ScanWork.Results)
     $ollamaLoaded = @($script:ScanWork.OllamaLoaded)
@@ -7808,7 +7908,6 @@ function Step-AiScan {
                         $script:ScanRows += @{ Kind = "section"; Title = [string]$group.Header }
                         if (-not $script:FilterDetected) {
                             Add-SectionHeaderToListView -ListView $lv -Title ([string]$group.Header)
-                            Pulse-ScanListPaint
                         }
                         $w.HeaderAdded = $true
                     }
@@ -7854,7 +7953,6 @@ function Step-AiScan {
                         $script:ScanRows += @{ Kind = "result"; Result = $r }
                         if (-not $script:FilterDetected -or (Test-RowIsDetected $r)) {
                             Add-ResultToListView -ListView $lv -r $r
-                            Pulse-ScanListPaint
                         }
                     }
                     $w.FnIndex++
@@ -7872,7 +7970,6 @@ function Step-AiScan {
                     $script:ScanRows += @{ Kind = "result"; Result = $r }
                     if (-not $script:FilterDetected -or (Test-RowIsDetected $r)) {
                         Add-ResultToListView -ListView $lv -r $r
-                        Pulse-ScanListPaint
                     }
                     if ($r.Installed -or ($r.Running -like "Yes*")) {
                         $tag = "FOUND"
@@ -7916,7 +8013,6 @@ function Start-AiScanSession {
     $lblStatus.Text = "Starting scan..."
     Set-ScanBarEnd -Percent 0
     $lv.Items.Clear()
-    Start-ScanListHold
     $script:SkipListLayout = $true
     $script:ScanRows = @()
     $script:HasScanResults = $false

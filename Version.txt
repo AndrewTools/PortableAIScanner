@@ -4,6 +4,39 @@ Format: MAJOR.MINOR.PATCH
 Newest version is at the top.
 
 ==============================================================================
+1.7.9  (2026-10-16)
+==============================================================================
+Build: 0209
+
+Changed
+- Loaded model names appear in the Version column. Running shows Yes.
+- All loaded model names are listed. The Version column widens to fit them.
+- List rows appear as soon as each scan step finishes. The list no longer
+  waits for a batch of items or a timer before painting.
+- A missing version string no longer stops the scan. Empty version, running,
+  status, and details fields are shown as blank instead of crashing the list.
+- Firefox AI Controls sheet major is now 158. Versions 148–158 with no
+  prefs are Activated. Versions above 158 stay Unknown.
+- Opera, Brave, and Comet show Activated when settings can be read and
+  no off key is stored.
+- Bielik (SpeakLeash) is a new Local Models row. Polish open-weight
+  models match by filename.
+- Local Models rows are sorted A-Z by display name. Other Local Models
+  stays last.
+- Dia + AI is a new browser row. Detects the Dia browser from
+  The Browser Company. AI on or AI off is shown when settings
+  can be read.
+- Windsurf row also detects Devin Desktop. The row name is
+  Windsurf / Devin Desktop.
+- Browser rows are sorted A-Z by name.
+- Dia shows Not Installed when the browser is missing.
+- Llama Windows is a new Other Apps row. It detects the
+  Hugging Face / ggml-org tray app for llama.cpp. How to disable is
+  Uninstall the app from Windows Settings > Apps.
+- Other Apps order is A-Z by display name. Llama Windows
+  appears before llama.cpp.
+
+==============================================================================
 1.7.8  (2026-10-12)
 ==============================================================================
 Build: 0198
@@ -30,13 +63,11 @@ Changed
   Details show the file count and sample names.
 - How to disable capitalizes the first word after each >.
   Firefox dynamic hints and the Get-HowToDisable fallback
-  follow the same rule. A code comment records the rule.
+  follow the same rule.
 - Leftover Details use plain language. Apps say the name is
   not installed and a data folder remains. Copilot says a
   registry key or protocol remains. Browsers and Windows
   features use the same form.
-  Firefox dynamic hints and the Get-HowToDisable fallback
-  follow the same rule. A code comment records the rule.
 - Firefox Details say AI preferences off and AI controls blocked.
 - Copilot Path is empty when no Copilot app is found. A leftover
   note is in Details.
