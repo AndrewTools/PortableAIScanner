@@ -7,8 +7,8 @@
 # That is not a missing function closer. Count braces outside strings.
 
 $script:AppName = "Portable AI Scanner"
-$script:AppVersion = "1.7.9"
-$script:AppBuild = "0209"
+$script:AppVersion = "1.8.0"
+$script:AppBuild = "0212"
 $script:GitHubRepo = "AndrewTools/PortableAIScanner"
 $script:UpdateUrl = ""
 
@@ -1136,8 +1136,9 @@ function Get-HowToDisable {
     }
 }
 
+# Running column rule: only display Yes or No.
+# Model names that were in Running (Yes (name)) go in the Version column.
 # Running = Yes whenever the browser or app process is open.
-# Model names that were in Running (Yes (name)) now go in the Version column.
 # Red only if Running = Yes and Status is Activated or Model loaded.
 
 
@@ -1645,6 +1646,7 @@ function Test-BrowserProcessOpen {
 }
 
 function Set-RunningAndStatus {
+    # Running column rule: only Yes or No. Model names go in Version.
     param($Result, [string]$ModelRunning)
     if (-not $Result) { return $Result }
     $st = [string]$Result.Activated
@@ -5152,6 +5154,33 @@ function Find-ModelFamilyOnDisk {
     }
 }
 
+function Move-PathFromDetails {
+    param($Result)
+    if (-not $Result -or -not $Result.Details) { return }
+    $details = [string]$Result.Details
+    $paths = @()
+    # Match Windows paths: drive letter or UNC
+    $matches = [regex]::Matches($details, '(?:[A-Za-z]:\\|\\\\)[^\s|]+')
+    foreach ($m in $matches) {
+        $p = $m.Value.TrimEnd(';', ',', '.')
+        if ($p -and $paths -notcontains $p) { $paths += $p }
+    }
+    if ($paths.Count -eq 0) { return }
+    if (-not $Result.Path) {
+        $Result.Path = ($paths | Select-Object -First 4) -join " | "
+    }
+    foreach ($p in $paths) {
+        $details = $details -replace [regex]::Escape($p), ''
+    }
+    $details = $details -replace '\s*\|\s*\|', ' | '
+    $details = $details -replace '^\s*\|\s*', ''
+    $details = $details -replace '\s*\|\s*$', ''
+    $details = $details -replace 'App:\s*$', ''
+    $details = $details.Trim()
+    if (-not $details) { $details = "" }
+    $Result.Details = $details
+}
+
 function New-ModelFamilyResult {
     param(
         [string]$DisplayName,
@@ -7948,6 +7977,9 @@ function Step-AiScan {
                         $r.Running = "No"
                     }
                     if ($r) {
+                        if ($group.Header -eq "Major Apps" -or $group.Header -eq "Local Models") {
+                            Move-PathFromDetails $r
+                        }
                         $r.Running = ""
                         $w.Results += $r
                         $script:ScanRows += @{ Kind = "result"; Result = $r }
@@ -7965,6 +7997,9 @@ function Step-AiScan {
                 if ($bg.Failed) { $script:ScanFailCount = [int]$script:ScanFailCount + 1 }
                 if (-not $bg.Failed -and $bg.Result -and @($bg.Result).Count -gt 0) { $r = @($bg.Result)[-1] }
                 if ($r) {
+                    if ($group.Header -eq "Major Apps" -or $group.Header -eq "Local Models") {
+                        Move-PathFromDetails $r
+                    }
                     $r.Running = ""
                     $w.Results += $r
                     $script:ScanRows += @{ Kind = "result"; Result = $r }
